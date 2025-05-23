@@ -18,7 +18,6 @@
  */
 
 #include "ResourceDownloadDialog.h"
-#include <QEventLoop>
 #include <QList>
 
 #include <QPushButton>
@@ -302,7 +301,7 @@ GetModDependenciesTask::Ptr ModDownloadDialog::getModDependenciesTask()
                 selectedVers.append(std::make_shared<GetModDependenciesTask::PackDependency>(selected->getPack(), selected->getVersion()));
             }
 
-            return makeShared<GetModDependenciesTask>(this, m_instance, model, selectedVers);
+            return makeShared<GetModDependenciesTask>(m_instance, model, selectedVers);
         }
     }
     return nullptr;
