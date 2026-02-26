@@ -54,7 +54,6 @@ class InstallJavaPage : public QWidget, public BasePage {
         horizontalLayout = new QHBoxLayout(this);
         horizontalLayout->setObjectName(QStringLiteral("horizontalLayout"));
         horizontalLayout->setContentsMargins(0, 0, 0, 0);
-
         majorVersionSelect = new VersionSelectWidget(this);
         majorVersionSelect->selectCurrent();
         majorVersionSelect->setEmptyString(tr("No Java versions are currently available in the meta."));
@@ -97,7 +96,7 @@ class InstallJavaPage : public QWidget, public BasePage {
 
     QString id() const override { return uid; }
     QString displayName() const override { return name; }
-    QIcon icon() const override { return APPLICATION->getThemedIcon(iconName); }
+    QIcon icon() const override { return QIcon::fromTheme(iconName); }
 
     void openedImpl() override
     {
@@ -140,9 +139,9 @@ class InstallJavaPage : public QWidget, public BasePage {
     void recommendedFilterChanged()
     {
         if (m_recommend) {
-            majorVersionSelect->setFilter(BaseVersionList::ModelRoles::JavaMajorRole, new ExactListFilter(m_recommended_majors));
+            majorVersionSelect->setFilter(BaseVersionList::ModelRoles::JavaMajorRole, Filters::equalsAny(m_recommended_majors));
         } else {
-            majorVersionSelect->setFilter(BaseVersionList::ModelRoles::JavaMajorRole, new ExactListFilter());
+            majorVersionSelect->setFilter(BaseVersionList::ModelRoles::JavaMajorRole, Filters::equalsAny());
         }
     }
 
@@ -187,11 +186,19 @@ InstallDialog::InstallDialog(const QString& uid, BaseInstance* instance, QWidget
     : QDialog(parent), container(new PageContainer(this, QString(), this)), buttons(new QDialogButtonBox(this))
 {
     auto layout = new QVBoxLayout(this);
-
+    // small margins look ugly on macOS on modal windows
+    #ifndef Q_OS_MACOS
+    layout->setContentsMargins(0, 0, 0, 0);
+    #endif
     container->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Expanding);
     layout->addWidget(container);
 
     auto buttonLayout = new QHBoxLayout(this);
+    // small margins look ugly on macOS on modal windows
+    #ifndef Q_OS_MACOS
+    buttonLayout->setContentsMargins(0, 0, 6, 6);
+    #endif
+
     auto refreshLayout = new QHBoxLayout(this);
 
     auto refreshButton = new QPushButton(tr("&Refresh"), this);
@@ -217,7 +224,7 @@ InstallDialog::InstallDialog(const QString& uid, BaseInstance* instance, QWidget
     connect(buttons, &QDialogButtonBox::rejected, this, &QDialog::reject);
     buttonLayout->addWidget(buttons);
 
-    layout->addLayout(buttonLayout);
+    container->addButtons(buttonLayout);
 
     setWindowTitle(dialogTitle());
     setWindowModality(Qt::WindowModal);
@@ -315,6 +322,7 @@ void InstallDialog::done(int result)
                         QString error = QString(tr("Could not determine Java download type!"));
                         CustomMessageBox::selectable(this, tr("Error"), error, QMessageBox::Warning)->show();
                         deletePath();
+                        return;
                 }
 #if defined(Q_OS_MACOS)
                 auto seq = makeShared<SequentialTask>(tr("Install Java"));

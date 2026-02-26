@@ -61,7 +61,7 @@ QVariant ListModel::data(const QModelIndex& index, int role) const
             if (m_logoMap.contains(pack.safeName)) {
                 return (m_logoMap.value(pack.safeName));
             }
-            auto icon = APPLICATION->getThemedIcon("atlauncher-placeholder");
+            auto icon = QIcon::fromTheme("atlauncher-placeholder");
 
             auto url = QString(BuildConfig.ATL_DOWNLOAD_SERVER_URL + "launcher/images/%1").arg(pack.safeName);
             ((ListModel*)this)->requestLogo(pack.safeName, url);
@@ -99,12 +99,12 @@ void ListModel::request()
 
     auto netJob = makeShared<NetJob>("Atl::Request", APPLICATION->network());
     auto url = QString(BuildConfig.ATL_DOWNLOAD_SERVER_URL + "launcher/json/packsnew.json");
-    netJob->addNetAction(Net::ApiDownload::makeByteArray(QUrl(url), response));
+    netJob->addNetAction(Net::ApiDownload::makeByteArray(QUrl(url), response.get()));
     jobPtr = netJob;
     jobPtr->start();
 
-    QObject::connect(netJob.get(), &NetJob::succeeded, this, &ListModel::requestFinished);
-    QObject::connect(netJob.get(), &NetJob::failed, this, &ListModel::requestFailed);
+    connect(netJob.get(), &NetJob::succeeded, this, &ListModel::requestFinished);
+    connect(netJob.get(), &NetJob::failed, this, &ListModel::requestFailed);
 }
 
 void ListModel::requestFinished()
@@ -114,7 +114,7 @@ void ListModel::requestFinished()
     QJsonParseError parse_error;
     QJsonDocument doc = QJsonDocument::fromJson(*response, &parse_error);
     if (parse_error.error != QJsonParseError::NoError) {
-        qWarning() << "Error while parsing JSON response from ATL at " << parse_error.offset << " reason: " << parse_error.errorString();
+        qWarning() << "Error while parsing JSON response from ATL at" << parse_error.offset << "reason:" << parse_error.errorString();
         qWarning() << *response;
         return;
     }
@@ -131,7 +131,7 @@ void ListModel::requestFinished()
             ATLauncher::loadIndexedPack(pack, packObj);
         } catch (const JSONValidationError& e) {
             qDebug() << QString::fromUtf8(*response);
-            qWarning() << "Error while reading pack manifest from ATLauncher: " << e.cause();
+            qWarning() << "Error while reading pack manifest from ATLauncher:" << e.cause();
             return;
         }
 
@@ -197,7 +197,7 @@ void ListModel::requestLogo(QString file, QString url)
     job->addNetAction(Net::ApiDownload::makeCached(QUrl(url), entry));
 
     auto fullPath = entry->getFullPath();
-    QObject::connect(job, &NetJob::succeeded, this, [this, file, fullPath, job] {
+    connect(job, &NetJob::succeeded, this, [this, file, fullPath, job] {
         job->deleteLater();
         emit logoLoaded(file, QIcon(fullPath));
         if (waitingCallbacks.contains(file)) {
@@ -205,7 +205,7 @@ void ListModel::requestLogo(QString file, QString url)
         }
     });
 
-    QObject::connect(job, &NetJob::failed, this, [this, file, job] {
+    connect(job, &NetJob::failed, this, [this, file, job] {
         job->deleteLater();
         emit logoFailed(file);
     });

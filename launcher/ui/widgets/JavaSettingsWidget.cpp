@@ -46,15 +46,15 @@
 #include "java/JavaInstallList.h"
 #include "java/JavaUtils.h"
 #include "settings/Setting.h"
-#include "sys.h"
+#include "SysInfo.h"
 #include "ui/dialogs/CustomMessageBox.h"
 #include "ui/dialogs/VersionSelectDialog.h"
 #include "ui/java/InstallJavaDialog.h"
 
 #include "ui_JavaSettingsWidget.h"
 
-JavaSettingsWidget::JavaSettingsWidget(InstancePtr instance, QWidget* parent)
-    : QWidget(parent), m_instance(std::move(instance)), m_ui(new Ui::JavaSettingsWidget)
+JavaSettingsWidget::JavaSettingsWidget(BaseInstance* instance, QWidget* parent)
+    : QWidget(parent), m_instance(instance), m_ui(new Ui::JavaSettingsWidget)
 {
     m_ui->setupUi(this);
 
@@ -79,7 +79,7 @@ JavaSettingsWidget::JavaSettingsWidget(InstancePtr instance, QWidget* parent)
         m_ui->memoryGroupBox->setCheckable(true);
         m_ui->javaArgumentsGroupBox->setCheckable(true);
 
-        SettingsObjectPtr settings = m_instance->settings();
+        SettingsObject* settings = m_instance->settings();
 
         connect(settings->getSetting("OverrideJavaLocation").get(), &Setting::SettingChanged, m_ui->javaInstallationGroupBox,
                 [this, settings] { m_ui->javaInstallationGroupBox->setChecked(settings->get("OverrideJavaLocation").toBool()); });
@@ -87,7 +87,7 @@ JavaSettingsWidget::JavaSettingsWidget(InstancePtr instance, QWidget* parent)
                 [this, settings] { m_ui->javaPathTextBox->setText(settings->get("JavaPath").toString()); });
 
         connect(m_ui->javaDownloadBtn, &QPushButton::clicked, this, [this] {
-            auto javaDialog = new Java::InstallDialog({}, m_instance.get(), this);
+            auto javaDialog = new Java::InstallDialog({}, m_instance, this);
             javaDialog->exec();
         });
         connect(m_ui->javaPathTextBox, &QLineEdit::textChanged, [this](QString newValue) {
@@ -101,8 +101,8 @@ JavaSettingsWidget::JavaSettingsWidget(InstancePtr instance, QWidget* parent)
     connect(m_ui->javaDetectBtn, &QPushButton::clicked, this, &JavaSettingsWidget::onJavaAutodetect);
     connect(m_ui->javaBrowseBtn, &QPushButton::clicked, this, &JavaSettingsWidget::onJavaBrowse);
 
-    connect(m_ui->maxMemSpinBox, QOverload<int>::of(&QSpinBox::valueChanged), this, &JavaSettingsWidget::updateThresholds);
-    connect(m_ui->minMemSpinBox, QOverload<int>::of(&QSpinBox::valueChanged), this, &JavaSettingsWidget::updateThresholds);
+    connect(m_ui->maxMemSpinBox, &QSpinBox::valueChanged, this, &JavaSettingsWidget::updateThresholds);
+    connect(m_ui->minMemSpinBox, &QSpinBox::valueChanged, this, &JavaSettingsWidget::updateThresholds);
 
     loadSettings();
     updateThresholds();
@@ -115,7 +115,7 @@ JavaSettingsWidget::~JavaSettingsWidget()
 
 void JavaSettingsWidget::loadSettings()
 {
-    SettingsObjectPtr settings;
+    SettingsObject* settings;
 
     if (m_instance != nullptr)
         settings = m_instance->settings();
@@ -158,7 +158,7 @@ void JavaSettingsWidget::loadSettings()
 
 void JavaSettingsWidget::saveSettings()
 {
-    SettingsObjectPtr settings;
+    SettingsObject* settings;
 
     if (m_instance != nullptr)
         settings = m_instance->settings();
@@ -265,7 +265,7 @@ void JavaSettingsWidget::onJavaAutodetect()
         return;
     }
 
-    VersionSelectDialog versionDialog(APPLICATION->javalist().get(), tr("Select a Java version"), this, true);
+    VersionSelectDialog versionDialog(APPLICATION->javalist(), tr("Select a Java version"), this, true);
     versionDialog.setResizeOn(2);
     versionDialog.exec();
 
@@ -285,30 +285,23 @@ void JavaSettingsWidget::onJavaAutodetect()
 }
 void JavaSettingsWidget::updateThresholds()
 {
-    auto sysMiB = Sys::getSystemRam() / Sys::mebibyte;
+    auto sysMiB = SysInfo::getSystemRamMiB();
     unsigned int maxMem = m_ui->maxMemSpinBox->value();
     unsigned int minMem = m_ui->minMemSpinBox->value();
 
-    QString iconName;
+    const QString warningColour(QStringLiteral("<span style='color:#f5c211'>%1</span>"));
 
     if (maxMem >= sysMiB) {
-        iconName = "status-bad";
-        m_ui->labelMaxMemIcon->setToolTip(tr("Your maximum memory allocation exceeds your system memory capacity."));
+        m_ui->labelMaxMemNotice->setText(
+            QString("<span style='color:red'>%1</span>").arg(tr("Your maximum memory allocation exceeds your system memory capacity.")));
+        m_ui->labelMaxMemNotice->show();
     } else if (maxMem > (sysMiB * 0.9)) {
-        iconName = "status-yellow";
-        m_ui->labelMaxMemIcon->setToolTip(tr("Your maximum memory allocation approaches your system memory capacity."));
+        m_ui->labelMaxMemNotice->setText(warningColour.arg(tr("Your maximum memory allocation is close to your system memory capacity.")));
+        m_ui->labelMaxMemNotice->show();
     } else if (maxMem < minMem) {
-        iconName = "status-yellow";
-        m_ui->labelMaxMemIcon->setToolTip(tr("Your maximum memory allocation is smaller than the minimum value"));
+        m_ui->labelMaxMemNotice->setText(warningColour.arg(tr("Your maximum memory allocation is below the minimum memory allocation.")));
+        m_ui->labelMaxMemNotice->show();
     } else {
-        iconName = "status-good";
-        m_ui->labelMaxMemIcon->setToolTip("");
-    }
-
-    {
-        auto height = m_ui->labelMaxMemIcon->fontInfo().pixelSize();
-        QIcon icon = APPLICATION->getThemedIcon(iconName);
-        QPixmap pix = icon.pixmap(height, height);
-        m_ui->labelMaxMemIcon->setPixmap(pix);
+        m_ui->labelMaxMemNotice->hide();
     }
 }

@@ -48,6 +48,7 @@
 #include <QDir>
 #include <QFileInfo>
 #include <QUrl>
+#include <QUrlQuery>
 #include <QVariant>
 
 #include <QAction>
@@ -71,6 +72,7 @@
 #include <QToolButton>
 #include <QWidget>
 #include <QWidgetAction>
+#include <memory>
 
 #include <BaseInstance.h>
 #include <BuildConfig.h>
@@ -91,6 +93,7 @@
 #include "InstanceWindow.h"
 
 #include "ui/GuiUtil.h"
+#include "ui/ViewLogWindow.h"
 #include "ui/dialogs/AboutDialog.h"
 #include "ui/dialogs/CopyInstanceDialog.h"
 #include "ui/dialogs/CreateShortcutDialog.h"
@@ -146,7 +149,7 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent), ui(new Ui::MainWi
 {
     ui->setupUi(this);
 
-    setWindowIcon(APPLICATION->getThemedIcon("logo"));
+    setWindowIcon(APPLICATION->logo());
     setWindowTitle(APPLICATION->applicationDisplayName());
 #ifndef QT_NO_ACCESSIBILITY
     setAccessibleName(BuildConfig.LAUNCHER_DISPLAYNAME);
@@ -163,7 +166,7 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent), ui(new Ui::MainWi
         // qt designer will delete it when you save the file >:(
         changeIconButton = new LabeledToolButton(this);
         changeIconButton->setObjectName(QStringLiteral("changeIconButton"));
-        changeIconButton->setIcon(APPLICATION->getThemedIcon("news"));
+        changeIconButton->setIcon(QIcon::fromTheme("news"));
         changeIconButton->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
         connect(changeIconButton, &QToolButton::clicked, this, &MainWindow::on_actionChangeInstIcon_triggered);
         ui->instanceToolBar->insertWidgetBefore(ui->actionLaunchInstance, changeIconButton);
@@ -180,7 +183,7 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent), ui(new Ui::MainWi
         auto const setting_name = QString("WideBarVisibility_%1").arg(ui->instanceToolBar->objectName());
         instanceToolbarSetting = APPLICATION->settings()->getOrRegisterSetting(setting_name);
 
-        ui->instanceToolBar->setVisibilityState(instanceToolbarSetting->get().toByteArray());
+        ui->instanceToolBar->setVisibilityState(QByteArray::fromBase64(instanceToolbarSetting->get().toString().toUtf8()));
 
         ui->instanceToolBar->addContextMenuAction(ui->newsToolBar->toggleViewAction());
         ui->instanceToolBar->addContextMenuAction(ui->instanceToolBar->toggleViewAction());
@@ -237,14 +240,8 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent), ui(new Ui::MainWi
         ui->actionViewJavaFolder->setEnabled(BuildConfig.JAVA_DOWNLOADER_ENABLED);
     }
 
-    {  // logs upload
-
-        auto menu = new QMenu(this);
-        for (auto file : QDir("logs").entryInfoList(QDir::Files)) {
-            auto action = menu->addAction(file.fileName());
-            connect(action, &QAction::triggered, this, [this, file] { GuiUtil::uploadPaste(file.fileName(), file, this); });
-        }
-        ui->actionUploadLog->setMenu(menu);
+    {  // logs viewing
+        connect(ui->actionViewLog, &QAction::triggered, this, [] { APPLICATION->showLogWindow(); });
     }
 
     // add the toolbar toggles to the view menu
@@ -281,14 +278,14 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent), ui(new Ui::MainWi
     {
         m_newsChecker.reset(new NewsChecker(APPLICATION->network(), BuildConfig.NEWS_RSS_URL));
         newsLabel = new QToolButton();
-        newsLabel->setIcon(APPLICATION->getThemedIcon("news"));
+        newsLabel->setIcon(QIcon::fromTheme("news"));
         newsLabel->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
         newsLabel->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
         newsLabel->setFocusPolicy(Qt::NoFocus);
         ui->newsToolBar->insertWidget(ui->actionMoreNews, newsLabel);
 
-        QObject::connect(newsLabel, &QAbstractButton::clicked, this, &MainWindow::newsButtonClicked);
-        QObject::connect(m_newsChecker.get(), &NewsChecker::newsLoaded, this, &MainWindow::updateNewsLabel);
+        connect(newsLabel, &QAbstractButton::clicked, this, &MainWindow::newsButtonClicked);
+        connect(m_newsChecker.get(), &NewsChecker::newsLoaded, this, &MainWindow::updateNewsLabel);
         updateNewsLabel();
     }
 
@@ -326,14 +323,14 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent), ui(new Ui::MainWi
         connect(view, &InstanceView::droppedURLs, this, &MainWindow::processURLs, Qt::QueuedConnection);
 
         proxymodel = new InstanceProxyModel(this);
-        proxymodel->setSourceModel(APPLICATION->instances().get());
+        proxymodel->setSourceModel(APPLICATION->instances());
         proxymodel->sort(0);
         connect(proxymodel, &InstanceProxyModel::dataChanged, this, &MainWindow::instanceDataChanged);
 
         view->setModel(proxymodel);
         view->setSourceOfGroupCollapseStatus(
             [](const QString& groupName) -> bool { return APPLICATION->instances()->isGroupCollapsed(groupName); });
-        connect(view, &InstanceView::groupStateChanged, APPLICATION->instances().get(), &InstanceList::on_GroupStateChanged);
+        connect(view, &InstanceView::groupStateChanged, APPLICATION->instances(), &InstanceList::on_GroupStateChanged);
         ui->horizontalLayout->addWidget(view);
     }
     // The cat background
@@ -369,16 +366,16 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent), ui(new Ui::MainWi
     connect(view->selectionModel(), &QItemSelectionModel::currentChanged, this, &MainWindow::instanceChanged);
 
     // track icon changes and update the toolbar!
-    connect(APPLICATION->icons().get(), &IconList::iconUpdated, this, &MainWindow::iconUpdated);
+    connect(APPLICATION->icons(), &IconList::iconUpdated, this, &MainWindow::iconUpdated);
 
     // model reset -> selection is invalid. All the instance pointers are wrong.
-    connect(APPLICATION->instances().get(), &InstanceList::dataIsInvalid, this, &MainWindow::selectionBad);
+    connect(APPLICATION->instances(), &InstanceList::dataIsInvalid, this, &MainWindow::selectionBad);
 
     // handle newly added instances
-    connect(APPLICATION->instances().get(), &InstanceList::instanceSelectRequest, this, &MainWindow::instanceSelectRequest);
+    connect(APPLICATION->instances(), &InstanceList::instanceSelectRequest, this, &MainWindow::instanceSelectRequest);
 
     // When the global settings page closes, we want to know about it and update our state
-    connect(APPLICATION, &Application::globalSettingsClosed, this, &MainWindow::globalSettingsClosed);
+    connect(APPLICATION, &Application::globalSettingsApplied, this, &MainWindow::globalSettingsClosed);
 
     m_statusLeft = new QLabel(tr("No instance selected"), this);
     m_statusCenter = new QLabel(tr("Total playtime: 0s"), this);
@@ -398,8 +395,8 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent), ui(new Ui::MainWi
     // Update the menu when the active account changes.
     // Shouldn't have to use lambdas here like this, but if I don't, the compiler throws a fit.
     // Template hell sucks...
-    connect(APPLICATION->accounts().get(), &AccountList::defaultAccountChanged, [this] { defaultAccountChanged(); });
-    connect(APPLICATION->accounts().get(), &AccountList::listChanged, [this] { defaultAccountChanged(); });
+    connect(APPLICATION->accounts(), &AccountList::defaultAccountChanged, [this] { defaultAccountChanged(); });
+    connect(APPLICATION->accounts(), &AccountList::listChanged, [this] { defaultAccountChanged(); });
 
     // Show initial account
     defaultAccountChanged();
@@ -423,7 +420,7 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent), ui(new Ui::MainWi
         auto updater = APPLICATION->updater();
 
         if (updater) {
-            connect(updater.get(), &ExternalUpdater::canCheckForUpdatesChanged, this, &MainWindow::updatesAllowedChanged);
+            connect(updater, &ExternalUpdater::canCheckForUpdatesChanged, this, &MainWindow::updatesAllowedChanged);
         }
     }
 
@@ -567,7 +564,7 @@ void MainWindow::showInstanceContextMenu(const QPoint& pos)
             actionCreateInstance->setData(instance_action_data);
         }
 
-        connect(actionCreateInstance, SIGNAL(triggered(bool)), SLOT(on_actionAddInstance_triggered()));
+        connect(actionCreateInstance, &QAction::triggered, this, &MainWindow::on_actionAddInstance_triggered);
 
         actions.prepend(actionSep);
         actions.prepend(actionVoid);
@@ -688,7 +685,7 @@ void MainWindow::repopulateAccountsMenu()
             if (!face.isNull()) {
                 action->setIcon(face);
             } else {
-                action->setIcon(APPLICATION->getThemedIcon("noaccount"));
+                action->setIcon(QIcon::fromTheme("noaccount"));
             }
 
             const int highestNumberKey = 9;
@@ -697,7 +694,7 @@ void MainWindow::repopulateAccountsMenu()
             }
 
             ui->accountsMenu->addAction(action);
-            connect(action, SIGNAL(triggered(bool)), SLOT(changeActiveAccount()));
+            connect(action, &QAction::triggered, this, &MainWindow::changeActiveAccount);
         }
     }
 
@@ -709,7 +706,7 @@ void MainWindow::repopulateAccountsMenu()
 
     ui->accountsMenu->addAction(ui->actionNoDefaultAccount);
 
-    connect(ui->actionNoDefaultAccount, SIGNAL(triggered(bool)), SLOT(changeActiveAccount()));
+    connect(ui->actionNoDefaultAccount, &QAction::triggered, this, &MainWindow::changeActiveAccount);
 
     ui->accountsMenu->addSeparator();
     ui->accountsMenu->addAction(ui->actionManageAccounts);
@@ -759,7 +756,7 @@ void MainWindow::defaultAccountChanged()
         ui->actionAccountsButton->setText(profileLabel);
         auto face = account->getFace();
         if (face.isNull()) {
-            ui->actionAccountsButton->setIcon(APPLICATION->getThemedIcon("noaccount"));
+            ui->actionAccountsButton->setIcon(QIcon::fromTheme("noaccount"));
         } else {
             ui->actionAccountsButton->setIcon(face);
         }
@@ -767,7 +764,7 @@ void MainWindow::defaultAccountChanged()
     }
 
     // Set the icon to the "no account" icon.
-    ui->actionAccountsButton->setIcon(APPLICATION->getThemedIcon("noaccount"));
+    ui->actionAccountsButton->setIcon(QIcon::fromTheme("noaccount"));
     ui->actionAccountsButton->setText(tr("Accounts"));
 }
 
@@ -944,6 +941,11 @@ void MainWindow::processURLs(QList<QUrl> urls)
         QMap<QString, QString> extra_info;
         QUrl local_url;
         if (!url.isLocalFile()) {  // download the remote resource and identify
+
+            const bool isExternalURLImport =
+                (url.host().toLower() == "import") ||
+                (url.path().startsWith("/import", Qt::CaseInsensitive));
+
             QUrl dl_url;
             if (url.scheme() == "curseforge") {
                 // need to find the download link for the modpack / resource
@@ -964,14 +966,14 @@ void MainWindow::processURLs(QList<QUrl> urls)
                 auto array = std::make_shared<QByteArray>();
 
                 auto api = FlameAPI();
-                auto job = api.getFile(addonId, fileId, array);
+                auto job = api.getFile(addonId, fileId, array.get());
 
                 connect(job.get(), &Task::failed, this,
                         [this](QString reason) { CustomMessageBox::selectable(this, tr("Error"), reason, QMessageBox::Critical)->show(); });
                 connect(job.get(), &Task::succeeded, this, [this, array, addonId, fileId, &dl_url, &version] {
                     qDebug() << "Returned CFURL Json:\n" << array->toStdString().c_str();
                     auto doc = Json::requireDocument(*array);
-                    auto data = Json::ensureObject(Json::ensureObject(doc.object()), "data");
+                    auto data = doc.object()["data"].toObject();
                     // No way to find out if it's a mod or a modpack before here
                     // And also we need to check if it ends with .zip, instead of any better way
                     version = FlameMod::loadIndexedPackVersion(data);
@@ -997,7 +999,7 @@ void MainWindow::processURLs(QList<QUrl> urls)
                     dlUrlDialod.execWithTask(job.get());
                 }
 
-            } else if (url.scheme() == BuildConfig.LAUNCHER_APP_BINARY_NAME) {
+            } else if (url.scheme() == BuildConfig.LAUNCHER_APP_BINARY_NAME && !isExternalURLImport) {
                 QVariantMap receivedData;
                 const QUrlQuery query(url.query());
                 const auto items = query.queryItems();
@@ -1005,6 +1007,78 @@ void MainWindow::processURLs(QList<QUrl> urls)
                     receivedData.insert(it->first, it->second);
                 emit APPLICATION->oauthReplyRecieved(receivedData);
                 continue;
+            } else if ((url.scheme() == "prismlauncher" || url.scheme() == BuildConfig.LAUNCHER_APP_BINARY_NAME) 
+                        && isExternalURLImport) {
+                // PrismLauncher URL protocol modpack import
+                // works for any prism fork
+                // preferred import format: prismlauncher://import?url=ENCODED
+                const auto host = url.host().toLower();
+                const auto path = url.path(); 
+
+                QString encodedTarget;
+
+                {
+                    QUrlQuery query(url);
+                    const auto values = query.allQueryItemValues("url");
+                    if (!values.isEmpty()) {
+                        encodedTarget = values.first();
+                    }
+                }
+
+                // alternative import format: prismlauncher://import/ENCODED
+                if (encodedTarget.isEmpty()) {
+
+                    QString p = path;
+
+                    if (p.startsWith("/import/", Qt::CaseInsensitive)) {
+                        p = p.mid(QString("/import/").size());
+                    } else if (host == "import" && p.startsWith("/")) {
+                        p = p.mid(1);
+                    }
+
+                    if (!p.isEmpty() && p != "/import") {
+                        encodedTarget = p;
+                    }
+                }
+
+                if (encodedTarget.isEmpty()) {
+                    CustomMessageBox::selectable(
+                        this,
+                        tr("Error"),
+                        tr("Invalid import link: missing 'url' parameter."),
+                        QMessageBox::Critical
+                    )->show();
+                    continue;
+                }
+
+                const QString decodedStr = QUrl::fromPercentEncoding(encodedTarget.toUtf8()).trimmed();
+
+                QUrl target = QUrl::fromUserInput(decodedStr);
+
+                // Validate: only allow http(s)
+                if (!target.isValid() || (target.scheme() != "https" && target.scheme() != "http")) {
+                    CustomMessageBox::selectable(
+                        this,
+                        tr("Error"),
+                        tr("Invalid import link: URL must be http(s)."),
+                        QMessageBox::Critical
+                    )->show();
+                    continue;
+                }
+
+                const auto res = QMessageBox::question(
+                    this,
+                    tr("Install modpack"),
+                    tr("Do you want to download and import a modpack from:\n%1\n\nURL:\n%2")
+                        .arg(target.host(), target.toString()),
+                    QMessageBox::Yes | QMessageBox::No,
+                    QMessageBox::Yes
+                );
+                if (res != QMessageBox::Yes) {
+                    continue;
+                }
+            
+                dl_url = target;
             } else {
                 dl_url = url;
             }
@@ -1045,7 +1119,7 @@ void MainWindow::processURLs(QList<QUrl> urls)
 
         auto type = ResourceUtils::identify(localFileInfo);
 
-        if (ResourceUtils::ValidResourceTypes.count(type) == 0) {  // probably instance/modpack
+        if (ModPlatform::ResourceTypeUtils::VALID_RESOURCES.count(type) == 0) {  // probably instance/modpack
             addInstance(localFileName, extra_info);
             continue;
         }
@@ -1066,28 +1140,28 @@ void MainWindow::processURLs(QList<QUrl> urls)
         qDebug() << "Adding resource" << localFileName << "to" << dlg.selectedInstanceKey;
 
         auto inst = APPLICATION->instances()->getInstanceById(dlg.selectedInstanceKey);
-        auto minecraftInst = std::dynamic_pointer_cast<MinecraftInstance>(inst);
+        auto minecraftInst = dynamic_cast<MinecraftInstance*>(inst);
 
         switch (type) {
-            case PackedResourceType::ResourcePack:
+            case ModPlatform::ResourceType::ResourcePack:
                 minecraftInst->resourcePackList()->installResourceWithFlameMetadata(localFileName, version);
                 break;
-            case PackedResourceType::TexturePack:
+            case ModPlatform::ResourceType::TexturePack:
                 minecraftInst->texturePackList()->installResourceWithFlameMetadata(localFileName, version);
                 break;
-            case PackedResourceType::DataPack:
+            case ModPlatform::ResourceType::DataPack:
                 qWarning() << "Importing of Data Packs not supported at this time. Ignoring" << localFileName;
                 break;
-            case PackedResourceType::Mod:
+            case ModPlatform::ResourceType::Mod:
                 minecraftInst->loaderModList()->installResourceWithFlameMetadata(localFileName, version);
                 break;
-            case PackedResourceType::ShaderPack:
+            case ModPlatform::ResourceType::ShaderPack:
                 minecraftInst->shaderPackList()->installResourceWithFlameMetadata(localFileName, version);
                 break;
-            case PackedResourceType::WorldSave:
+            case ModPlatform::ResourceType::World:
                 minecraftInst->worldList()->installWorld(localFileInfo);
                 break;
-            case PackedResourceType::UNKNOWN:
+            case ModPlatform::ResourceType::Unknown:
             default:
                 qDebug() << "Can't Identify" << localFileName << "Ignoring it.";
                 break;
@@ -1206,7 +1280,10 @@ void MainWindow::renameGroup(QString group)
 
 void MainWindow::undoTrashInstance()
 {
-    APPLICATION->instances()->undoTrashInstance();
+    if (!APPLICATION->instances()->undoTrashInstance())
+        QMessageBox::warning(
+            this, tr("Failed to undo trashing instance"),
+            tr("Some instances and shortcuts could not be restored.\nPlease check your trashbin to manually restore them."));
     ui->actionUndoTrashInstance->setEnabled(APPLICATION->instances()->trashedSomething());
 }
 
@@ -1292,7 +1369,7 @@ void MainWindow::globalSettingsClosed()
     updateStatusCenter();
     // This needs to be done to prevent UI elements disappearing in the event the config is changed
     // but Prism Launcher exits abnormally, causing the window state to never be saved:
-    APPLICATION->settings()->set("MainWindowState", saveState().toBase64());
+    APPLICATION->settings()->set("MainWindowState", QString::fromUtf8(saveState().toBase64()));
     update();
 }
 
@@ -1405,11 +1482,15 @@ void MainWindow::on_actionDeleteInstance_triggered()
     }
     auto id = m_selectedInstance->id();
 
+    QString shortcutStr;
+    auto shortcuts = m_selectedInstance->shortcuts();
+    if (!shortcuts.isEmpty())
+        shortcutStr = tr(" and its %n registered shortcut(s)", "", shortcuts.size());
     auto response = CustomMessageBox::selectable(this, tr("Confirm Deletion"),
-                                                 tr("You are about to delete \"%1\".\n"
+                                                 tr("You are about to delete \"%1\"%2.\n"
                                                     "This may be permanent and will completely delete the instance.\n\n"
                                                     "Are you sure?")
-                                                     .arg(m_selectedInstance->name()),
+                                                     .arg(m_selectedInstance->name(), shortcutStr),
                                                  QMessageBox::Warning, QMessageBox::Yes | QMessageBox::No, QMessageBox::No)
                         ->exec();
 
@@ -1439,15 +1520,18 @@ void MainWindow::on_actionExportInstanceZip_triggered()
 void MainWindow::on_actionExportInstanceMrPack_triggered()
 {
     if (m_selectedInstance) {
-        ExportPackDialog dlg(m_selectedInstance, this);
-        dlg.exec();
+        auto instance = dynamic_cast<MinecraftInstance*>(m_selectedInstance);
+        if (instance != nullptr) {
+            ExportPackDialog dlg(instance, this);
+            dlg.exec();
+        }
     }
 }
 
 void MainWindow::on_actionExportInstanceFlamePack_triggered()
 {
     if (m_selectedInstance) {
-        auto instance = dynamic_cast<MinecraftInstance*>(m_selectedInstance.get());
+        auto instance = dynamic_cast<MinecraftInstance*>(m_selectedInstance);
         if (instance) {
             if (auto cmp = instance->getPackProfile()->getComponent("net.minecraft");
                 cmp && cmp->getVersionFile() && cmp->getVersionFile()->type == "snapshot") {
@@ -1456,7 +1540,7 @@ void MainWindow::on_actionExportInstanceFlamePack_triggered()
                 msgBox.exec();
                 return;
             }
-            ExportPackDialog dlg(m_selectedInstance, this, ModPlatform::ResourceProvider::FLAME);
+            ExportPackDialog dlg(instance, this, ModPlatform::ResourceProvider::FLAME);
             dlg.exec();
         }
     }
@@ -1480,9 +1564,9 @@ void MainWindow::on_actionViewSelectedInstFolder_triggered()
 void MainWindow::closeEvent(QCloseEvent* event)
 {
     // Save the window state and geometry.
-    APPLICATION->settings()->set("MainWindowState", saveState().toBase64());
-    APPLICATION->settings()->set("MainWindowGeometry", saveGeometry().toBase64());
-    instanceToolbarSetting->set(ui->instanceToolBar->getVisibilityState());
+    APPLICATION->settings()->set("MainWindowState", QString::fromUtf8(saveState().toBase64()));
+    APPLICATION->settings()->set("MainWindowGeometry", QString::fromUtf8(saveGeometry().toBase64()));
+    instanceToolbarSetting->set(QString::fromUtf8(ui->instanceToolBar->getVisibilityState().toBase64()));
     event->accept();
     emit isClosing();
 }
@@ -1500,7 +1584,7 @@ void MainWindow::instanceActivated(QModelIndex index)
     if (!index.isValid())
         return;
     QString id = index.data(InstanceList::InstanceIDRole).toString();
-    InstancePtr inst = APPLICATION->instances()->getInstanceById(id);
+    BaseInstance* inst = APPLICATION->instances()->getInstanceById(id);
     if (!inst)
         return;
 
@@ -1514,7 +1598,7 @@ void MainWindow::on_actionLaunchInstance_triggered()
     }
 }
 
-void MainWindow::activateInstance(InstancePtr instance)
+void MainWindow::activateInstance(BaseInstance* instance)
 {
     APPLICATION->launch(instance);
 }
@@ -1548,8 +1632,8 @@ void MainWindow::taskEnd()
 
 void MainWindow::startTask(Task* task)
 {
-    connect(task, SIGNAL(succeeded()), SLOT(taskEnd()));
-    connect(task, SIGNAL(failed(QString)), SLOT(taskEnd()));
+    connect(task, &Task::succeeded, this, &MainWindow::taskEnd);
+    connect(task, &Task::failed, this, &MainWindow::taskEnd);
     task->start();
 }
 
@@ -1561,8 +1645,8 @@ void MainWindow::instanceChanged(const QModelIndex& current, [[maybe_unused]] co
         return;
     }
     if (m_selectedInstance) {
-        disconnect(m_selectedInstance.get(), &BaseInstance::runningStatusChanged, this, &MainWindow::refreshCurrentInstance);
-        disconnect(m_selectedInstance.get(), &BaseInstance::profilerChanged, this, &MainWindow::refreshCurrentInstance);
+        disconnect(m_selectedInstance, &BaseInstance::runningStatusChanged, this, &MainWindow::refreshCurrentInstance);
+        disconnect(m_selectedInstance, &BaseInstance::profilerChanged, this, &MainWindow::refreshCurrentInstance);
     }
     QString id = current.data(InstanceList::InstanceIDRole).toString();
     m_selectedInstance = APPLICATION->instances()->getInstanceById(id);
@@ -1582,8 +1666,8 @@ void MainWindow::instanceChanged(const QModelIndex& current, [[maybe_unused]] co
 
         APPLICATION->settings()->set("SelectedInstance", m_selectedInstance->id());
 
-        connect(m_selectedInstance.get(), &BaseInstance::runningStatusChanged, this, &MainWindow::refreshCurrentInstance);
-        connect(m_selectedInstance.get(), &BaseInstance::profilerChanged, this, &MainWindow::refreshCurrentInstance);
+        connect(m_selectedInstance, &BaseInstance::runningStatusChanged, this, &MainWindow::refreshCurrentInstance);
+        connect(m_selectedInstance, &BaseInstance::profilerChanged, this, &MainWindow::refreshCurrentInstance);
     } else {
         APPLICATION->settings()->set("SelectedInstance", QString());
         selectionBad();

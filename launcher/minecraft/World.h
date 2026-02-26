@@ -59,7 +59,7 @@ class World {
     // WEAK compare operator - used for replacing worlds
     bool operator==(const World& other) const;
 
-    [[nodiscard]] auto isSymLink() const -> bool { return m_containerFile.isSymLink(); }
+    auto isSymLink() const -> bool { return m_containerFile.isSymLink(); }
 
     /**
      * @brief Take a instance path, checks if the file pointed to by the resource is a symlink or under a symlink in that instance
@@ -68,9 +68,9 @@ class World {
      * @return true
      * @return false
      */
-    [[nodiscard]] bool isSymLinkUnder(const QString& instPath) const;
+    bool isSymLinkUnder(const QString& instPath) const;
 
-    [[nodiscard]] bool isMoreThanOneHardLink() const;
+    bool isMoreThanOneHardLink() const;
 
     QString canonicalFilePath() const { return m_containerFile.canonicalFilePath(); }
 
@@ -87,7 +87,7 @@ class World {
     QString m_iconFile;
     QDateTime m_levelDatTime;
     QDateTime m_lastPlayed;
-    int64_t m_size;
+    int64_t m_size = 0;
     int64_t m_randomSeed = 0;
     GameType m_gameType;
     bool m_isValid = false;

@@ -46,27 +46,29 @@ void FlameCheckUpdate::executeTask()
     connect(netJob, &Task::stepProgress, this, &FlameCheckUpdate::propagateStepProgress);
     connect(netJob, &Task::details, this, &FlameCheckUpdate::setDetails);
     for (auto* resource : m_resources) {
-        auto versions_url_optional = api.getVersionsURL({ { resource->metadata()->project_id.toString() }, m_game_versions });
-        if (!versions_url_optional.has_value())
+        auto project = std::make_shared<ModPlatform::IndexedPack>();
+        project->addonId = resource->metadata()->project_id.toString();
+        auto versionsUrlOptional = api.getVersionsURL({ project, m_gameVersions });
+        if (!versionsUrlOptional.has_value())
             continue;
 
         auto response = std::make_shared<QByteArray>();
-        auto task = Net::ApiDownload::makeByteArray(versions_url_optional.value(), response);
+        auto task = Net::ApiDownload::makeByteArray(versionsUrlOptional.value(), response.get());
 
-        connect(task.get(), &Task::succeeded, this, [this, resource, response] { getLatestVersionCallback(resource, response); });
+        connect(task.get(), &Task::succeeded, this, [this, resource, response] { getLatestVersionCallback(resource, response.get()); });
         netJob->addNetAction(task);
     }
     m_task.reset(netJob);
     m_task->start();
 }
 
-void FlameCheckUpdate::getLatestVersionCallback(Resource* resource, std::shared_ptr<QByteArray> response)
+void FlameCheckUpdate::getLatestVersionCallback(Resource* resource, QByteArray* response)
 {
     QJsonParseError parse_error{};
     QJsonDocument doc = QJsonDocument::fromJson(*response, &parse_error);
     if (parse_error.error != QJsonParseError::NoError) {
-        qWarning() << "Error while parsing JSON response from latest mod version at " << parse_error.offset
-                   << " reason: " << parse_error.errorString();
+        qWarning() << "Error while parsing JSON response from latest mod version at" << parse_error.offset
+                   << "reason:" << parse_error.errorString();
         qWarning() << *response;
         return;
     }
@@ -87,7 +89,7 @@ void FlameCheckUpdate::getLatestVersionCallback(Resource* resource, std::shared_
         qCritical() << e.what();
         qDebug() << doc;
     }
-    auto latest_ver = api.getLatestVersion(pack->versions, m_loaders_list, resource->metadata()->loaders);
+    auto latest_ver = api.getLatestVersion(pack->versions, m_loadersList, resource->metadata()->loaders, !m_loadersList.isEmpty());
 
     setStatus(tr("Parsing the API response from CurseForge for '%1'...").arg(resource->name()));
 
@@ -119,7 +121,7 @@ void FlameCheckUpdate::getLatestVersionCallback(Resource* resource, std::shared_
                 old_version = tr("Unknown");
         }
 
-        auto download_task = makeShared<ResourceDownloadTask>(pack, latest_ver.value(), m_resource_model);
+        auto download_task = makeShared<ResourceDownloadTask>(pack, latest_ver.value(), m_resourceModel);
         m_updates.emplace_back(pack->name, resource->metadata()->hash, old_version, latest_ver->version, latest_ver->version_type,
                                api.getModFileChangelog(latest_ver->addonId.toInt(), latest_ver->fileId.toInt()),
                                ModPlatform::ResourceProvider::FLAME, download_task, resource->enabled());
@@ -144,17 +146,17 @@ void FlameCheckUpdate::collectBlockedMods()
         emitSucceeded();
         return;
     } else if (addonIds.size() == 1) {
-        projTask = api.getProject(*addonIds.begin(), response);
+        projTask = api.getProject(*addonIds.begin(), response.get());
     } else {
-        projTask = api.getProjects(addonIds, response);
+        projTask = api.getProjects(addonIds, response.get());
     }
 
     connect(projTask.get(), &Task::succeeded, this, [this, response, addonIds, quickSearch] {
         QJsonParseError parse_error{};
         auto doc = QJsonDocument::fromJson(*response, &parse_error);
         if (parse_error.error != QJsonParseError::NoError) {
-            qWarning() << "Error while parsing JSON response from Flame projects task at " << parse_error.offset
-                       << " reason: " << parse_error.errorString();
+            qWarning() << "Error while parsing JSON response from Flame projects task at" << parse_error.offset
+                       << "reason:" << parse_error.errorString();
             qWarning() << *response;
             return;
         }

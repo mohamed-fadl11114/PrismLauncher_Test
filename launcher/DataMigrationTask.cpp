@@ -12,7 +12,7 @@
 
 #include <QtConcurrent>
 
-DataMigrationTask::DataMigrationTask(const QString& sourcePath, const QString& targetPath, const IPathMatcher::Ptr pathMatcher)
+DataMigrationTask::DataMigrationTask(const QString& sourcePath, const QString& targetPath, Filter pathMatcher)
     : Task(), m_sourcePath(sourcePath), m_targetPath(targetPath), m_pathMatcher(pathMatcher), m_copy(sourcePath, targetPath)
 {
     m_copy.matcher(m_pathMatcher).whitelist(true);
@@ -63,7 +63,7 @@ void DataMigrationTask::dryRunFinished()
 
 void DataMigrationTask::dryRunAborted()
 {
-    emitFailed(tr("Aborted"));
+    emitAborted();
 }
 
 void DataMigrationTask::copyFinished()
@@ -81,5 +81,5 @@ void DataMigrationTask::copyFinished()
 
 void DataMigrationTask::copyAborted()
 {
-    emitFailed(tr("Aborted"));
+    emitAborted();
 }

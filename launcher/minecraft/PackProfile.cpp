@@ -38,7 +38,6 @@
  */
 
 #include <Version.h>
-#include <qlogging.h>
 #include <QCryptographicHash>
 #include <QDebug>
 #include <QDir>
@@ -130,18 +129,18 @@ static ComponentPtr componentFromJsonV1(PackProfile* parent, const QString& comp
     auto uid = Json::requireString(obj.value("uid"));
     auto filePath = componentJsonPattern.arg(uid);
     auto component = makeShared<Component>(parent, uid);
-    component->m_version = Json::ensureString(obj.value("version"));
-    component->m_dependencyOnly = Json::ensureBoolean(obj.value("dependencyOnly"), false);
-    component->m_important = Json::ensureBoolean(obj.value("important"), false);
+    component->m_version = obj.value("version").toString();
+    component->m_dependencyOnly = obj.value("dependencyOnly").toBool();
+    component->m_important = obj.value("important").toBool();
 
     // cached
     // TODO @RESILIENCE: ignore invalid values/structure here?
-    component->m_cachedVersion = Json::ensureString(obj.value("cachedVersion"));
-    component->m_cachedName = Json::ensureString(obj.value("cachedName"));
+    component->m_cachedVersion = obj.value("cachedVersion").toString();
+    component->m_cachedName = obj.value("cachedName").toString();
     Meta::parseRequires(obj, &component->m_cachedRequires, "cachedRequires");
     Meta::parseRequires(obj, &component->m_cachedConflicts, "cachedConflicts");
-    component->m_cachedVolatile = Json::ensureBoolean(obj.value("volatile"), false);
-    bool disabled = Json::ensureBoolean(obj.value("disabled"), false);
+    component->m_cachedVolatile = obj.value("volatile").toBool();
+    bool disabled = obj.value("disabled").toBool();
     component->setEnabled(!disabled);
     return component;
 }
@@ -168,6 +167,7 @@ static bool savePackProfile(const QString& filename, const ComponentContainer& c
     }
     if (!outFile.commit()) {
         qCCritical(instanceProfileC) << "Couldn't save" << outFile.fileName() << "because:" << outFile.errorString();
+        return false;
     }
     return true;
 }
@@ -230,9 +230,8 @@ static PackProfile::Result loadPackProfile(PackProfile* parent,
 
 void PackProfile::saveNow()
 {
-    if (saveIsScheduled()) {
+    if (saveIsScheduled() && save_internal()) {
         d->m_saveTimer.stop();
-        save_internal();
     }
 }
 
@@ -280,12 +279,15 @@ QString PackProfile::patchFilePathForUid(const QString& uid) const
     return patchesPattern().arg(uid);
 }
 
-void PackProfile::save_internal()
+bool PackProfile::save_internal()
 {
     qDebug() << d->m_instance->name() << "|" << "Component list save performed now";
     auto filename = componentsFilePath();
-    savePackProfile(filename, d->components);
-    d->dirty = false;
+    if (savePackProfile(filename, d->components)) {
+        d->dirty = false;
+        return true;
+    }
+    return false;
 }
 
 PackProfile::Result PackProfile::load()
@@ -364,7 +366,7 @@ void PackProfile::updateSucceeded()
 
 void PackProfile::updateFailed(const QString& error)
 {
-    qCDebug(instanceProfileC) << d->m_instance->name() << "|" << "Component list update/resolve task failed " << "Reason:" << error;
+    qCDebug(instanceProfileC) << d->m_instance->name() << "|" << "Component list update/resolve task failed. Reason:" << error;
     d->m_updateTask.reset();
     invalidateLaunchProfile();
 }
@@ -952,7 +954,7 @@ std::shared_ptr<LaunchProfile> PackProfile::getProfile() const
             }
             d->m_profile = profile;
         } catch (const Exception& error) {
-            qCWarning(instanceProfileC) << d->m_instance->name() << "|" << "Couldn't apply profile patches because: " << error.cause();
+            qCWarning(instanceProfileC) << d->m_instance->name() << "|" << "Couldn't apply profile patches because:" << error.cause();
         }
     }
     return d->m_profile;

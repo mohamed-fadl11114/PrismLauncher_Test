@@ -33,6 +33,7 @@
 #include "ui/themes/SystemTheme.h"
 
 #include "Application.h"
+#include "settings/SettingsObject.h"
 
 ThemeManager::ThemeManager()
 {
@@ -48,6 +49,11 @@ ThemeManager::ThemeManager()
 
     initializeThemes();
     initializeCatPacks();
+}
+
+ThemeManager::~ThemeManager()
+{
+    stopSettingNewWindowColorsOnMac();
 }
 
 /// @brief Adds the Theme to the list of themes
@@ -109,7 +115,7 @@ void ThemeManager::initializeIcons()
 
     if (!m_iconThemeFolder.mkpath("."))
         themeWarningLog() << "Couldn't create icon theme folder";
-    themeDebugLog() << "Icon Theme Folder Path: " << m_iconThemeFolder.absolutePath();
+    themeDebugLog() << "Icon Theme Folder Path:" << m_iconThemeFolder.absolutePath();
 
     QDirIterator directoryIterator(m_iconThemeFolder.path(), QDir::Dirs | QDir::NoDotAndDotDot);
     while (directoryIterator.hasNext()) {
@@ -149,7 +155,7 @@ void ThemeManager::initializeWidgets()
 
     if (!m_applicationThemeFolder.mkpath("."))
         themeWarningLog() << "Couldn't create theme folder";
-    themeDebugLog() << "Theme Folder Path: " << m_applicationThemeFolder.absolutePath();
+    themeDebugLog() << "Theme Folder Path:" << m_applicationThemeFolder.absolutePath();
 
     QDirIterator directoryIterator(m_applicationThemeFolder.path(), QDir::Dirs | QDir::NoDotAndDotDot);
     while (directoryIterator.hasNext()) {
@@ -173,6 +179,12 @@ void ThemeManager::initializeWidgets()
 
     themeDebugLog() << "<> Widget themes initialized.";
 }
+
+#ifndef Q_OS_MACOS
+void ThemeManager::setTitlebarColorOnMac(WId windowId, QColor color) {}
+void ThemeManager::setTitlebarColorOfAllWindowsOnMac(QColor color) {}
+void ThemeManager::stopSettingNewWindowColorsOnMac() {}
+#endif
 
 QList<IconTheme*> ThemeManager::getValidIconThemes()
 {
@@ -247,6 +259,7 @@ void ThemeManager::setApplicationTheme(const QString& name, bool initial)
         auto& theme = themeIter->second;
         themeDebugLog() << "applying theme" << theme->name();
         theme->apply(initial);
+        setTitlebarColorOfAllWindowsOnMac(qApp->palette().window().color());
 
         m_logColors = theme->logColorScheme();
     } else {

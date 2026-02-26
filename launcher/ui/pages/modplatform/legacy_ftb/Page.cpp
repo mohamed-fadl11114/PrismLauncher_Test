@@ -107,6 +107,7 @@ Page::Page(NewInstanceDialog* dialog, QWidget* parent) : QWidget(parent), dialog
     }
 
     ui->versionSelectionBox->view()->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+    ui->versionSelectionBox->view()->setVerticalScrollMode(QAbstractItemView::ScrollPerPixel);
     ui->versionSelectionBox->view()->parentWidget()->setMaximumHeight(300);
 
     connect(ui->sortByBox, &QComboBox::currentTextChanged, this, &Page::onSortingSelectionChanged);
@@ -233,7 +234,9 @@ void Page::onPublicPackSelectionChanged(QModelIndex now, [[maybe_unused]] QModel
         onPackSelectionChanged();
         return;
     }
-    Modpack selectedPack = publicFilterModel->data(now, Qt::UserRole).value<Modpack>();
+    QVariant raw = publicFilterModel->data(now, Qt::UserRole);
+    Q_ASSERT(raw.canConvert<Modpack>());
+    auto selectedPack = raw.value<Modpack>();
     onPackSelectionChanged(&selectedPack);
 }
 
@@ -243,7 +246,9 @@ void Page::onThirdPartyPackSelectionChanged(QModelIndex now, [[maybe_unused]] QM
         onPackSelectionChanged();
         return;
     }
-    Modpack selectedPack = thirdPartyFilterModel->data(now, Qt::UserRole).value<Modpack>();
+    QVariant raw = thirdPartyFilterModel->data(now, Qt::UserRole);
+    Q_ASSERT(raw.canConvert<Modpack>());
+    auto selectedPack = raw.value<Modpack>();
     onPackSelectionChanged(&selectedPack);
 }
 
@@ -253,7 +258,9 @@ void Page::onPrivatePackSelectionChanged(QModelIndex now, [[maybe_unused]] QMode
         onPackSelectionChanged();
         return;
     }
-    Modpack selectedPack = privateFilterModel->data(now, Qt::UserRole).value<Modpack>();
+    QVariant raw = privateFilterModel->data(now, Qt::UserRole);
+    Q_ASSERT(raw.canConvert<Modpack>());
+    auto selectedPack = raw.value<Modpack>();
     onPackSelectionChanged(&selectedPack);
 }
 
@@ -328,7 +335,9 @@ void Page::onTabChanged(int tab)
     currentList->selectionModel()->reset();
     QModelIndex idx = currentList->currentIndex();
     if (idx.isValid()) {
-        auto pack = currentModel->data(idx, Qt::UserRole).value<Modpack>();
+        QVariant raw = currentModel->data(idx, Qt::UserRole);
+        Q_ASSERT(raw.canConvert<Modpack>());
+        auto pack = raw.value<Modpack>();
         onPackSelectionChanged(&pack);
     } else {
         onPackSelectionChanged();
