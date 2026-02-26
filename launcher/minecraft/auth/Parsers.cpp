@@ -75,7 +75,7 @@ bool getBool(QJsonValue value, bool& out)
     "Message":"",
     "Redirect":"https://start.ui.xboxlive.com/AddChildToFamily"
 }
-// 2148916233 = missing XBox account
+// 2148916233 = missing Xbox account
 // 2148916238 = child account not linked to a family
 */
 
@@ -86,7 +86,7 @@ bool parseXTokenResponse(QByteArray& data, Token& output, QString name)
     QJsonParseError jsonError;
     QJsonDocument doc = QJsonDocument::fromJson(data, &jsonError);
     if (jsonError.error) {
-        qWarning() << "Failed to parse response from user.auth.xboxlive.com as JSON: " << jsonError.errorString();
+        qWarning() << "Failed to parse response from user.auth.xboxlive.com as JSON:" << jsonError.errorString();
         return false;
     }
 
@@ -123,7 +123,7 @@ bool parseXTokenResponse(QByteArray& data, Token& output, QString name)
         for (auto iter = obj_.begin(); iter != obj_.end(); iter++) {
             QString claim;
             if (!getString(obj_.value(iter.key()), claim)) {
-                qWarning() << "display claim " << iter.key() << " is not a string...";
+                qWarning() << "display claim" << iter.key() << "is not a string...";
                 return false;
             }
             output.extra[iter.key()] = claim;
@@ -148,7 +148,7 @@ bool parseMinecraftProfile(QByteArray& data, MinecraftProfile& output)
     QJsonParseError jsonError;
     QJsonDocument doc = QJsonDocument::fromJson(data, &jsonError);
     if (jsonError.error) {
-        qWarning() << "Failed to parse response from user.auth.xboxlive.com as JSON: " << jsonError.errorString();
+        qWarning() << "Failed to parse response from user.auth.xboxlive.com as JSON:" << jsonError.errorString();
         return false;
     }
 
@@ -207,6 +207,7 @@ bool parseMinecraftProfile(QByteArray& data, MinecraftProfile& output)
         if (!getString(capeObj.value("url"), capeOut.url)) {
             continue;
         }
+        capeOut.url.replace("http://textures.minecraft.net", "https://textures.minecraft.net");
         if (!getString(capeObj.value("alias"), capeOut.alias)) {
             continue;
         }
@@ -289,7 +290,7 @@ bool parseMinecraftProfileMojang(QByteArray& data, MinecraftProfile& output)
     QJsonParseError jsonError;
     QJsonDocument doc = QJsonDocument::fromJson(data, &jsonError);
     if (jsonError.error) {
-        qWarning() << "Failed to parse response as JSON: " << jsonError.errorString();
+        qWarning() << "Failed to parse response as JSON:" << jsonError.errorString();
         return false;
     }
 
@@ -330,7 +331,7 @@ bool parseMinecraftProfileMojang(QByteArray& data, MinecraftProfile& output)
 
     doc = QJsonDocument::fromJson(texturePayload, &jsonError);
     if (jsonError.error) {
-        qWarning() << "Failed to parse response as JSON: " << jsonError.errorString();
+        qWarning() << "Failed to parse response as JSON:" << jsonError.errorString();
         return false;
     }
 
@@ -358,6 +359,7 @@ bool parseMinecraftProfileMojang(QByteArray& data, MinecraftProfile& output)
                     qWarning() << "Skin url is not a string";
                     return false;
                 }
+                skinOut.url.replace("http://textures.minecraft.net", "https://textures.minecraft.net");
 
                 auto maybeMeta = skin.find("metadata");
                 if (maybeMeta != skin.end() && maybeMeta->isObject()) {
@@ -371,6 +373,7 @@ bool parseMinecraftProfileMojang(QByteArray& data, MinecraftProfile& output)
                     qWarning() << "Cape url is not a string";
                     return false;
                 }
+                capeOut.url.replace("http://textures.minecraft.net", "https://textures.minecraft.net");
 
                 // we don't know the cape ID as it is not returned from the session server
                 // so just fake it - changing capes is probably locked anyway :(
@@ -397,7 +400,7 @@ bool parseMinecraftEntitlements(QByteArray& data, MinecraftEntitlement& output)
     QJsonParseError jsonError;
     QJsonDocument doc = QJsonDocument::fromJson(data, &jsonError);
     if (jsonError.error) {
-        qWarning() << "Failed to parse response from user.auth.xboxlive.com as JSON: " << jsonError.errorString();
+        qWarning() << "Failed to parse response from user.auth.xboxlive.com as JSON:" << jsonError.errorString();
         return false;
     }
 
@@ -460,7 +463,7 @@ bool parseMojangResponse(QByteArray& data, Token& output)
     qCDebug(authCredentials()) << data;
     QJsonDocument doc = QJsonDocument::fromJson(data, &jsonError);
     if (jsonError.error) {
-        qWarning() << "Failed to parse response from api.minecraftservices.com/launcher/login as JSON: " << jsonError.errorString();
+        qWarning() << "Failed to parse response from api.minecraftservices.com/launcher/login as JSON:" << jsonError.errorString();
         return false;
     }
 

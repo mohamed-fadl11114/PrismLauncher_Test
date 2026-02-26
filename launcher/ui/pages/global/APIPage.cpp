@@ -62,7 +62,6 @@ APIPage::APIPage(QWidget* parent) : QWidget(parent), ui(new Ui::APIPage)
     static const QRegularExpression s_validUrlRegExp("https?://.+");
     static const QRegularExpression s_validMSAClientID(
         QRegularExpression::anchoredPattern("[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}"));
-    static const QRegularExpression s_validFlameKey(QRegularExpression::anchoredPattern("\\$2[ayb]\\$.{56}"));
 
     ui->setupUi(this);
 
@@ -76,11 +75,14 @@ APIPage::APIPage(QWidget* parent) : QWidget(parent), ui(new Ui::APIPage)
     updateBaseURLPlaceholder(ui->pasteTypeComboBox->currentIndex());
     // NOTE: this allows http://, but we replace that with https later anyway
     ui->metaURL->setValidator(new QRegularExpressionValidator(s_validUrlRegExp, ui->metaURL));
+    ui->resourceURL->setValidator(new QRegularExpressionValidator(s_validUrlRegExp, ui->resourceURL));
     ui->baseURLEntry->setValidator(new QRegularExpressionValidator(s_validUrlRegExp, ui->baseURLEntry));
+    ui->legacyFMLLibsURL->setValidator(new QRegularExpressionValidator(s_validUrlRegExp, ui->legacyFMLLibsURL));
     ui->msaClientID->setValidator(new QRegularExpressionValidator(s_validMSAClientID, ui->msaClientID));
-    ui->flameKey->setValidator(new QRegularExpressionValidator(s_validFlameKey, ui->flameKey));
 
     ui->metaURL->setPlaceholderText(BuildConfig.META_URL);
+    ui->resourceURL->setPlaceholderText(BuildConfig.DEFAULT_RESOURCE_BASE);
+    ui->legacyFMLLibsURL->setPlaceholderText(BuildConfig.LEGACY_FMLLIBS_BASE_URL);
     ui->userAgentLineEdit->setPlaceholderText(BuildConfig.USER_AGENT);
 
     loadSettings();
@@ -137,6 +139,10 @@ void APIPage::loadSettings()
     ui->msaClientID->setText(msaClientID);
     QString metaURL = s->get("MetaURLOverride").toString();
     ui->metaURL->setText(metaURL);
+    QString resourceURL = s->get("ResourceURLOverride").toString();
+    ui->resourceURL->setText(resourceURL);
+    QString fmlLibsURL = s->get("LegacyFMLLibsURLOverride").toString();
+    ui->legacyFMLLibsURL->setText(fmlLibsURL);
     QString flameKey = s->get("FlameKeyOverride").toString();
     ui->flameKey->setText(flameKey);
     QString modrinthToken = s->get("ModrinthToken").toString();
@@ -156,18 +162,35 @@ void APIPage::applySettings()
     QString msaClientID = ui->msaClientID->text();
     s->set("MSAClientIDOverride", msaClientID);
     QUrl metaURL(ui->metaURL->text());
-    // Add required trailing slash
-    if (!metaURL.isEmpty() && !metaURL.path().endsWith('/')) {
-        QString path = metaURL.path();
-        path.append('/');
-        metaURL.setPath(path);
-    }
-    // Don't allow HTTP, since meta is basically RCE with all the jar files.
-    if (!metaURL.isEmpty() && metaURL.scheme() == "http") {
-        metaURL.setScheme("https");
-    }
+    QUrl resourceURL(ui->resourceURL->text());
+    QUrl fmlLibsURL(ui->legacyFMLLibsURL->text());
+
+    auto addRequiredTrailingSlash = [](QUrl& url) {
+        if (!url.isEmpty() && !url.path().endsWith('/')) {
+            QString path = url.path();
+            path.append('/');
+            url.setPath(path);
+        }
+    };
+    addRequiredTrailingSlash(metaURL);
+    addRequiredTrailingSlash(resourceURL);
+    addRequiredTrailingSlash(fmlLibsURL);
+
+    auto isLocalhost = [](const QUrl& url) { return url.host() == "localhost" || url.host() == "127.0.0.1" || url.host() == "::1"; };
+    auto isUnsafe = [isLocalhost](const QUrl& url) { return !url.isEmpty() && url.scheme() == "http" && !isLocalhost(url); };
+    auto upgradeToHTTPS = [isUnsafe](QUrl& url) {
+        if (isUnsafe(url)) {
+            url.setScheme("https");
+        }
+    };
+
+    upgradeToHTTPS(metaURL);
+    upgradeToHTTPS(resourceURL);
+    upgradeToHTTPS(fmlLibsURL);
 
     s->set("MetaURLOverride", metaURL.toString());
+    s->set("ResourceURLOverride", resourceURL.toString());
+    s->set("LegacyFMLLibsURLOverride", fmlLibsURL.toString());
     QString flameKey = ui->flameKey->text();
     s->set("FlameKeyOverride", flameKey);
     QString modrinthToken = ui->modrinthToken->text();

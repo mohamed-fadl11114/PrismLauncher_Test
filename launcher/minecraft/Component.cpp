@@ -462,7 +462,7 @@ void Component::waitLoadMeta()
     }
 }
 
-void Component::setUpdateAction(UpdateAction action)
+void Component::setUpdateAction(const UpdateAction& action)
 {
     m_updateAction = action;
 }
@@ -479,6 +479,7 @@ void Component::clearUpdateAction()
 
 QDebug operator<<(QDebug d, const Component& comp)
 {
-    d << "Component(" << comp.m_uid << " : " << comp.m_cachedVersion << ")";
+    QDebugStateSaver saver(d);
+    d.nospace() << "Component(" << comp.m_uid << " : " << comp.m_cachedVersion << ")";
     return d;
 }

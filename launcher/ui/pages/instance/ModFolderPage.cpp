@@ -37,7 +37,9 @@
  */
 
 #include "ModFolderPage.h"
+#include "minecraft/mod/Resource.h"
 #include "ui/dialogs/ExportToModListDialog.h"
+#include "ui/dialogs/InstallLoaderDialog.h"
 #include "ui_ExternalResourcesPage.h"
 
 #include <QAbstractItemModel>
@@ -65,7 +67,7 @@
 #include "tasks/Task.h"
 #include "ui/dialogs/ProgressDialog.h"
 
-ModFolderPage::ModFolderPage(BaseInstance* inst, std::shared_ptr<ModFolderModel> model, QWidget* parent)
+ModFolderPage::ModFolderPage(BaseInstance* inst, ModFolderModel* model, QWidget* parent)
     : ExternalResourcesPage(inst, model, parent), m_model(model)
 {
     ui->actionDownloadItem->setText(tr("Download Mods"));
@@ -90,7 +92,7 @@ ModFolderPage::ModFolderPage(BaseInstance* inst, std::shared_ptr<ModFolderModel>
     auto depsDisabled = APPLICATION->settings()->getSetting("ModDependenciesDisabled");
     ui->actionVerifyItemDependencies->setVisible(!depsDisabled->get().toBool());
     connect(depsDisabled.get(), &Setting::SettingChanged, this,
-            [this](const Setting& setting, const QVariant& value) { ui->actionVerifyItemDependencies->setVisible(!value.toBool()); });
+            [this](const Setting&, const QVariant& value) { ui->actionVerifyItemDependencies->setVisible(!value.toBool()); });
 
     updateMenu->addAction(ui->actionResetItemMetadata);
     connect(ui->actionResetItemMetadata, &QAction::triggered, this, &ModFolderPage::deleteModMetadata);
@@ -106,6 +108,8 @@ ModFolderPage::ModFolderPage(BaseInstance* inst, std::shared_ptr<ModFolderModel>
     ui->actionExportMetadata->setToolTip(tr("Export mod's metadata to text."));
     connect(ui->actionExportMetadata, &QAction::triggered, this, &ModFolderPage::exportModMetadata);
     ui->actionsToolbar->insertActionAfter(ui->actionViewHomepage, ui->actionExportMetadata);
+
+    ui->actionsToolbar->insertActionAfter(ui->actionViewFolder, ui->actionViewConfigs);
 }
 
 bool ModFolderPage::shouldDisplay() const
@@ -133,7 +137,25 @@ void ModFolderPage::removeItems(const QItemSelection& selection)
         if (response != QMessageBox::Yes)
             return;
     }
-    m_model->deleteResources(selection.indexes());
+
+    auto indexes = selection.indexes();
+    auto affected = m_model->getAffectedMods(indexes, EnableAction::DISABLE);
+    if (!affected.isEmpty()) {
+        auto response = CustomMessageBox::selectable(this, tr("Confirm Disable"),
+                                                     tr("The mods you are trying to delete are required by %1 mods.\n"
+                                                        "Do you want to disable them?")
+                                                         .arg(affected.length()),
+                                                     QMessageBox::Warning, QMessageBox::Yes | QMessageBox::No | QMessageBox::Cancel,
+                                                     QMessageBox::Cancel)
+                            ->exec();
+
+        if (response != QMessageBox::Yes) {
+            m_model->setResourceEnabled(affected, EnableAction::DISABLE);
+        } else if (response != QMessageBox::Cancel) {
+            return;
+        }
+    }
+    m_model->deleteResources(indexes);
 }
 
 void ModFolderPage::downloadMods()
@@ -143,8 +165,9 @@ void ModFolderPage::downloadMods()
 
     auto profile = static_cast<MinecraftInstance*>(m_instance)->getPackProfile();
     if (!profile->getModLoaders().has_value()) {
-        QMessageBox::critical(this, tr("Error"), tr("Please install a mod loader first!"));
-        return;
+        if (handleNoModLoader()) {
+            return;
+        }
     }
 
     m_downloadDialog = new ResourceDownload::ModDownloadDialog(this, m_model, m_instance);
@@ -199,8 +222,9 @@ void ModFolderPage::updateMods(bool includeDeps)
 
     auto profile = static_cast<MinecraftInstance*>(m_instance)->getPackProfile();
     if (!profile->getModLoaders().has_value()) {
-        QMessageBox::critical(this, tr("Error"), tr("Please install a mod loader first!"));
-        return;
+        if (handleNoModLoader()) {
+            return;
+        }
     }
     if (APPLICATION->settings()->get("ModMetadataDisabled").toBool()) {
         QMessageBox::critical(this, tr("Error"), tr("Mod updates are unavailable when metadata is disabled!"));
@@ -225,7 +249,7 @@ void ModFolderPage::updateMods(bool includeDeps)
     if (use_all)
         mods_list = m_model->allResources();
 
-    ResourceUpdateDialog update_dialog(this, m_instance, m_model, mods_list, includeDeps, true);
+    ResourceUpdateDialog update_dialog(this, m_instance, m_model, mods_list, includeDeps, profile->getModLoadersList());
     update_dialog.checkCandidates();
 
     if (update_dialog.aborted()) {
@@ -303,8 +327,9 @@ void ModFolderPage::changeModVersion()
 
     auto profile = static_cast<MinecraftInstance*>(m_instance)->getPackProfile();
     if (!profile->getModLoaders().has_value()) {
-        QMessageBox::critical(this, tr("Error"), tr("Please install a mod loader first!"));
-        return;
+        if (handleNoModLoader()) {
+            return;
+        }
     }
     if (APPLICATION->settings()->get("ModMetadataDisabled").toBool()) {
         QMessageBox::critical(this, tr("Error"), tr("Mod updates are unavailable when metadata is disabled!"));
@@ -335,8 +360,7 @@ void ModFolderPage::exportModMetadata()
     dlg.exec();
 }
 
-CoreModFolderPage::CoreModFolderPage(BaseInstance* inst, std::shared_ptr<ModFolderModel> mods, QWidget* parent)
-    : ModFolderPage(inst, mods, parent)
+CoreModFolderPage::CoreModFolderPage(BaseInstance* inst, ModFolderModel* mods, QWidget* parent) : ModFolderPage(inst, mods, parent)
 {
     auto mcInst = dynamic_cast<MinecraftInstance*>(m_instance);
     if (mcInst) {
@@ -352,7 +376,9 @@ CoreModFolderPage::CoreModFolderPage(BaseInstance* inst, std::shared_ptr<ModFold
                             m_container->refreshContainer();
                         }
                     });
-                    update->start();
+                    if (!update->isRunning()) {
+                        update->start();
+                    }
                 }
             }
         }
@@ -375,11 +401,41 @@ bool CoreModFolderPage::shouldDisplay() const
     return false;
 }
 
-NilModFolderPage::NilModFolderPage(BaseInstance* inst, std::shared_ptr<ModFolderModel> mods, QWidget* parent)
-    : ModFolderPage(inst, mods, parent)
-{}
+NilModFolderPage::NilModFolderPage(BaseInstance* inst, ModFolderModel* mods, QWidget* parent) : ModFolderPage(inst, mods, parent) {}
 
 bool NilModFolderPage::shouldDisplay() const
 {
     return m_model->dir().exists();
+}
+
+// Helper function so this doesn't need to be duplicated 3 times
+inline bool ModFolderPage::handleNoModLoader()
+{
+    int resp =
+        QMessageBox::question(this, this->tr("Missing Mod Loader"),
+                              this->tr("You need to install a compatible mod loader before installing mods. Would you like to do so?"),
+                              QMessageBox::Yes | QMessageBox::No, QMessageBox::Yes);
+    switch (resp) {
+        case QMessageBox::Yes: {
+            // Should be safe
+            auto profile = static_cast<MinecraftInstance*>(this->m_instance)->getPackProfile();
+            InstallLoaderDialog dialog(profile, QString(), this);
+            bool ret = dialog.exec();
+            this->m_container->refreshContainer();
+
+            // returning negation of dialog.exec which'll be true if the install loader dialog got canceled/closed
+            // and false if the user went through and installed a loader
+            return !ret;
+        }
+        case QMessageBox::No: {
+            // Nothing happens the dialog is already closing
+            // returning true so the caller doesn't go and continue with opening it's dialog without a mod loader
+            return true;
+        }
+        default: {
+            // Unreachable
+            // returning true as a safety measure
+            return true;
+        }
+    }
 }

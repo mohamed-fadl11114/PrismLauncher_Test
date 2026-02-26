@@ -64,9 +64,9 @@ void WorldList::startWatching()
     update();
     m_isWatching = m_watcher->addPath(m_dir.absolutePath());
     if (m_isWatching) {
-        qDebug() << "Started watching " << m_dir.absolutePath();
+        qDebug() << "Started watching" << m_dir.absolutePath();
     } else {
-        qDebug() << "Failed to start watching " << m_dir.absolutePath();
+        qDebug() << "Failed to start watching" << m_dir.absolutePath();
     }
 }
 
@@ -77,9 +77,9 @@ void WorldList::stopWatching()
     }
     m_isWatching = !m_watcher->removePath(m_dir.absolutePath());
     if (!m_isWatching) {
-        qDebug() << "Stopped watching " << m_dir.absolutePath();
+        qDebug() << "Stopped watching" << m_dir.absolutePath();
     } else {
-        qDebug() << "Failed to stop watching " << m_dir.absolutePath();
+        qDebug() << "Failed to stop watching" << m_dir.absolutePath();
     }
 }
 
@@ -301,50 +301,31 @@ QStringList WorldList::mimeTypes() const
     return types;
 }
 
-class WorldMimeData : public QMimeData {
-    Q_OBJECT
-
-   public:
-    WorldMimeData(QList<World> worlds) { m_worlds = worlds; }
-    QStringList formats() const { return QMimeData::formats() << "text/uri-list"; }
-
-   protected:
-    QVariant retrieveData(const QString& mimetype, QMetaType type) const
-    {
-        QList<QUrl> urls;
-        for (auto& world : m_worlds) {
-            if (!world.isValid() || !world.isOnFS())
-                continue;
-            QString worldPath = world.container().absoluteFilePath();
-            qDebug() << worldPath;
-            urls.append(QUrl::fromLocalFile(worldPath));
-        }
-        const_cast<WorldMimeData*>(this)->setUrls(urls);
-        return QMimeData::retrieveData(mimetype, type);
-    }
-
-   private:
-    QList<World> m_worlds;
-};
-
 QMimeData* WorldList::mimeData(const QModelIndexList& indexes) const
 {
-    if (indexes.size() == 0)
-        return new QMimeData();
+    QList<QUrl> urls;
 
-    QList<World> worlds_;
     for (auto idx : indexes) {
         if (idx.column() != 0)
             continue;
+
         int row = idx.row();
         if (row < 0 || row >= this->m_worlds.size())
             continue;
-        worlds_.append(this->m_worlds[row]);
+
+        const World& world = m_worlds[row];
+
+        if (!world.isValid() || !world.isOnFS())
+            continue;
+
+        QString worldPath = world.container().absoluteFilePath();
+        qDebug() << worldPath;
+        urls.append(QUrl::fromLocalFile(worldPath));
     }
-    if (!worlds_.size()) {
-        return new QMimeData();
-    }
-    return new WorldMimeData(worlds_);
+
+    auto result = new QMimeData();
+    result->setUrls(urls);
+    return result;
 }
 
 Qt::ItemFlags WorldList::flags(const QModelIndex& index) const
@@ -370,7 +351,7 @@ Qt::DropActions WorldList::supportedDropActions() const
 
 void WorldList::installWorld(QFileInfo filename)
 {
-    qDebug() << "installing: " << filename.absoluteFilePath();
+    qDebug() << "installing:" << filename.absoluteFilePath();
     World w(filename);
     if (!w.isValid()) {
         return;
@@ -453,5 +434,3 @@ void WorldList::loadWorldsAsync()
         });
     }
 }
-
-#include "WorldList.moc"

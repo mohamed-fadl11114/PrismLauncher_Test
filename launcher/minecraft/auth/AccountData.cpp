@@ -41,7 +41,7 @@
 #include <QUuid>
 
 namespace {
-void tokenToJSONV3(QJsonObject& parent, Token t, const char* tokenName)
+void tokenToJSONV3(QJsonObject& parent, const Token& t, const char* tokenName)
 {
     if (!t.persistent) {
         return;
@@ -180,6 +180,7 @@ MinecraftProfile profileFromJSONV3(const QJsonObject& parent, const char* tokenN
         }
         out.skin.id = idV.toString();
         out.skin.url = urlV.toString();
+        out.skin.url.replace("http://textures.minecraft.net", "https://textures.minecraft.net");
         out.skin.variant = variantV.toString();
 
         // data for skin is optional
@@ -216,6 +217,7 @@ MinecraftProfile profileFromJSONV3(const QJsonObject& parent, const char* tokenN
             Cape cape;
             cape.id = idV.toString();
             cape.url = urlV.toString();
+            cape.url.replace("http://textures.minecraft.net", "https://textures.minecraft.net");
             cape.alias = aliasV.toString();
 
             // data for cape is optional.
@@ -301,7 +303,6 @@ bool AccountData::resumeStateFromV3(QJsonObject data)
         }  // leave msaClientID empty if it doesn't exist or isn't a string
         msaToken = tokenFromJSONV3(data, "msa");
         userToken = tokenFromJSONV3(data, "utoken");
-        xboxApiToken = tokenFromJSONV3(data, "xrp-main");
         mojangservicesToken = tokenFromJSONV3(data, "xrp-mc");
     }
 
@@ -331,7 +332,6 @@ QJsonObject AccountData::saveState() const
         output["msa-client-id"] = msaClientID;
         tokenToJSONV3(output, msaToken, "msa");
         tokenToJSONV3(output, userToken, "utoken");
-        tokenToJSONV3(output, xboxApiToken, "xrp-main");
         tokenToJSONV3(output, mojangservicesToken, "xrp-mc");
     } else if (type == AccountType::Offline) {
         output["type"] = "Offline";
@@ -356,28 +356,10 @@ QString AccountData::profileId() const
 QString AccountData::profileName() const
 {
     if (minecraftProfile.name.size() == 0) {
-        return QObject::tr("No profile (%1)").arg(accountDisplayString());
-    } else {
-        return minecraftProfile.name;
+        return QObject::tr("No Minecraft profile");
     }
-}
 
-QString AccountData::accountDisplayString() const
-{
-    switch (type) {
-        case AccountType::Offline: {
-            return QObject::tr("<Offline>");
-        }
-        case AccountType::MSA: {
-            if (xboxApiToken.extra.contains("gtg")) {
-                return xboxApiToken.extra["gtg"].toString();
-            }
-            return "Xbox profile missing";
-        }
-        default: {
-            return "Invalid Account";
-        }
-    }
+    return minecraftProfile.name;
 }
 
 QString AccountData::lastError() const

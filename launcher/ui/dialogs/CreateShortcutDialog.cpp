@@ -38,7 +38,6 @@
 #include <QLayout>
 #include <QPushButton>
 
-#include "Application.h"
 #include "BuildConfig.h"
 #include "CreateShortcutDialog.h"
 #include "ui_CreateShortcutDialog.h"
@@ -56,7 +55,7 @@
 #include "minecraft/WorldList.h"
 #include "minecraft/auth/AccountList.h"
 
-CreateShortcutDialog::CreateShortcutDialog(InstancePtr instance, QWidget* parent)
+CreateShortcutDialog::CreateShortcutDialog(BaseInstance* instance, QWidget* parent)
     : QDialog(parent), ui(new Ui::CreateShortcutDialog), m_instance(instance)
 {
     ui->setupUi(this);
@@ -65,7 +64,7 @@ CreateShortcutDialog::CreateShortcutDialog(InstancePtr instance, QWidget* parent
     ui->iconButton->setIcon(APPLICATION->icons()->getIcon(InstIconKey));
     ui->instNameTextBox->setPlaceholderText(instance->name());
 
-    auto mInst = std::dynamic_pointer_cast<MinecraftInstance>(instance);
+    auto mInst = dynamic_cast<MinecraftInstance*>(instance);
     m_QuickJoinSupported = mInst && mInst->traits().contains("feature:is_quick_play_singleplayer");
     auto worldList = mInst->worldList();
     worldList->update();
@@ -83,12 +82,12 @@ CreateShortcutDialog::CreateShortcutDialog(InstancePtr instance, QWidget* parent
         QString applicationDir = FS::getApplicationsDir();
 
         if (!desktopDir.isEmpty())
-            ui->saveTargetSelectionBox->addItem(tr("Desktop"), QVariant::fromValue(SaveTarget::Desktop));
+            ui->saveTargetSelectionBox->addItem(tr("Desktop"), QVariant::fromValue(ShortcutTarget::Desktop));
 
         if (!applicationDir.isEmpty())
-            ui->saveTargetSelectionBox->addItem(tr("Applications"), QVariant::fromValue(SaveTarget::Applications));
+            ui->saveTargetSelectionBox->addItem(tr("Applications"), QVariant::fromValue(ShortcutTarget::Applications));
     }
-    ui->saveTargetSelectionBox->addItem(tr("Other..."), QVariant::fromValue(SaveTarget::Other));
+    ui->saveTargetSelectionBox->addItem(tr("Other..."), QVariant::fromValue(ShortcutTarget::Other));
 
     // Populate worlds
     if (m_QuickJoinSupported) {
@@ -112,7 +111,7 @@ CreateShortcutDialog::CreateShortcutDialog(InstancePtr instance, QWidget* parent
             if (account->isInUse())
                 profileLabel = tr("%1 (in use)").arg(profileLabel);
             auto face = account->getFace();
-            QIcon icon = face.isNull() ? APPLICATION->getThemedIcon("noaccount") : face;
+            QIcon icon = face.isNull() ? QIcon::fromTheme("noaccount") : face;
             ui->accountSelectionBox->addItem(profileLabel, account->profileName());
             ui->accountSelectionBox->setItemIcon(i, icon);
             if (defaultAccount == account)
@@ -206,17 +205,17 @@ void CreateShortcutDialog::createShortcut()
         }
     }
 
-    auto target = ui->saveTargetSelectionBox->currentData().value<SaveTarget>();
+    auto target = ui->saveTargetSelectionBox->currentData().value<ShortcutTarget>();
     auto name = ui->instNameTextBox->text();
     if (name.isEmpty())
         name = ui->instNameTextBox->placeholderText();
     if (ui->overrideAccountCheckbox->isChecked())
         extraArgs.append({ "--profile", ui->accountSelectionBox->currentData().toString() });
 
-    ShortcutUtils::Shortcut args{ m_instance.get(), name, targetString, this, extraArgs, InstIconKey };
-    if (target == SaveTarget::Desktop)
+    ShortcutUtils::Shortcut args{ m_instance, name, targetString, this, extraArgs, InstIconKey, target };
+    if (target == ShortcutTarget::Desktop)
         ShortcutUtils::createInstanceShortcutOnDesktop(args);
-    else if (target == SaveTarget::Applications)
+    else if (target == ShortcutTarget::Applications)
         ShortcutUtils::createInstanceShortcutInApplications(args);
     else
         ShortcutUtils::createInstanceShortcutInOther(args);

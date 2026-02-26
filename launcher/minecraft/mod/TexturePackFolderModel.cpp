@@ -33,10 +33,6 @@
  *      See the License for the specific language governing permissions and
  *      limitations under the License.
  */
-#include <QCoreApplication>
-
-#include "Application.h"
-
 #include "TexturePackFolderModel.h"
 
 #include "minecraft/mod/tasks/LocalTexturePackParseTask.h"
@@ -51,7 +47,6 @@ TexturePackFolderModel::TexturePackFolderModel(const QDir& dir, BaseInstance* in
     m_column_resize_modes = { QHeaderView::Interactive, QHeaderView::Interactive, QHeaderView::Stretch,
                               QHeaderView::Interactive, QHeaderView::Interactive, QHeaderView::Interactive };
     m_columnsHideable = { false, true, false, true, true, true };
-    m_columnsHiddenByDefault = { false, false, false, false, false, true };
 }
 
 Task* TexturePackFolderModel::createParseTask(Resource& resource)
@@ -68,56 +63,46 @@ QVariant TexturePackFolderModel::data(const QModelIndex& index, int role) const
     int column = index.column();
 
     switch (role) {
-        case Qt::DisplayRole:
-            switch (column) {
-                case NameColumn:
-                    return m_resources[row]->name();
-                case DateColumn:
-                    return m_resources[row]->dateTimeChanged();
-                case ProviderColumn:
-                    return m_resources[row]->provider();
-                case SizeColumn:
-                    return m_resources[row]->sizeStr();
-                default:
-                    return {};
-            }
-        case Qt::ToolTipRole:
-            if (column == NameColumn) {
-                if (at(row).isSymLinkUnder(instDirPath())) {
-                    return m_resources[row]->internal_id() +
-                           tr("\nWarning: This resource is symbolically linked from elsewhere. Editing it will also change the original."
-                              "\nCanonical Path: %1")
-                               .arg(at(row).fileinfo().canonicalFilePath());
-                    ;
-                }
-                if (at(row).isMoreThanOneHardLink()) {
-                    return m_resources[row]->internal_id() +
-                           tr("\nWarning: This resource is hard linked elsewhere. Editing it will also change the original.");
-                }
-            }
-
-            return m_resources[row]->internal_id();
+        case Qt::BackgroundRole:
+            return rowBackground(row);
         case Qt::DecorationRole: {
-            if (column == NameColumn && (at(row).isSymLinkUnder(instDirPath()) || at(row).isMoreThanOneHardLink()))
-                return APPLICATION->getThemedIcon("status-yellow");
             if (column == ImageColumn) {
                 return at(row).image({ 32, 32 }, Qt::AspectRatioMode::KeepAspectRatioByExpanding);
             }
-            return {};
+            break;
         }
         case Qt::SizeHintRole:
             if (column == ImageColumn) {
                 return QSize(32, 32);
             }
-            return {};
-        case Qt::CheckStateRole:
-            if (column == ActiveColumn) {
-                return m_resources[row]->enabled() ? Qt::Checked : Qt::Unchecked;
-            }
-            return {};
-        default:
-            return {};
+            break;
     }
+
+    // map the columns to the base equivilents
+    QModelIndex mappedIndex;
+    switch (column) {
+        case ActiveColumn:
+            mappedIndex = index.siblingAtColumn(ResourceFolderModel::ActiveColumn);
+            break;
+        case NameColumn:
+            mappedIndex = index.siblingAtColumn(ResourceFolderModel::NameColumn);
+            break;
+        case DateColumn:
+            mappedIndex = index.siblingAtColumn(ResourceFolderModel::DateColumn);
+            break;
+        case ProviderColumn:
+            mappedIndex = index.siblingAtColumn(ResourceFolderModel::ProviderColumn);
+            break;
+        case SizeColumn:
+            mappedIndex = index.siblingAtColumn(ResourceFolderModel::SizeColumn);
+            break;
+    }
+
+    if (mappedIndex.isValid()) {
+        return ResourceFolderModel::data(mappedIndex, role);
+    }
+
+    return {};
 }
 
 QVariant TexturePackFolderModel::headerData(int section, [[maybe_unused]] Qt::Orientation orientation, int role) const

@@ -259,8 +259,8 @@ VersionFilePtr OneSixVersionFormat::versionFileFromJson(const QJsonDocument& doc
 
     if (root.contains("runtimes")) {
         out->runtimes = {};
-        for (auto runtime : ensureArray(root, "runtimes")) {
-            out->runtimes.append(Java::parseJavaMeta(ensureObject(runtime)));
+        for (auto runtime : root["runtimes"].toArray()) {
+            out->runtimes.append(Java::parseJavaMeta(runtime.toObject()));
         }
     }
 
@@ -370,8 +370,7 @@ LibraryPtr OneSixVersionFormat::plusJarModFromJson([[maybe_unused]] ProblemConta
     }
 
     // just make up something unique on the spot for the library name.
-    auto uuid = QUuid::createUuid();
-    QString id = uuid.toString().remove('{').remove('}');
+    QString id = QUuid::createUuid().toString(QUuid::WithoutBraces);
     out->setRawName(GradleSpecifier("org.multimc.jarmods:" + id + ":1"));
 
     // filename override is the old name

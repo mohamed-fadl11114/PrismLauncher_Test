@@ -61,6 +61,7 @@ AtlPage::AtlPage(NewInstanceDialog* dialog, QWidget* parent) : QWidget(parent), 
     ui->packView->setIndentation(0);
 
     ui->versionSelectionBox->view()->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+    ui->versionSelectionBox->view()->setVerticalScrollMode(QAbstractItemView::ScrollPerPixel);
     ui->versionSelectionBox->view()->parentWidget()->setMaximumHeight(300);
 
     for (int i = 0; i < filterModel->getAvailableSortings().size(); i++) {
@@ -143,7 +144,9 @@ void AtlPage::onSelectionChanged(QModelIndex first, [[maybe_unused]] QModelIndex
         return;
     }
 
-    selected = filterModel->data(first, Qt::UserRole).value<ATLauncher::IndexedPack>();
+    QVariant raw = filterModel->data(first, Qt::UserRole);
+    Q_ASSERT(raw.canConvert<ATLauncher::IndexedPack>());
+    selected = raw.value<ATLauncher::IndexedPack>();
 
     ui->packDescription->setHtml(StringUtils::htmlListPatch(selected.description.replace("\n", "<br>")));
 

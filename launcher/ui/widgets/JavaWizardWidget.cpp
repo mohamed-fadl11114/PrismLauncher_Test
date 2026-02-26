@@ -1,5 +1,6 @@
 #include "JavaWizardWidget.h"
 
+#include <QCheckBox>
 #include <QFileDialog>
 #include <QGroupBox>
 #include <QLabel>
@@ -11,8 +12,6 @@
 #include <QSpinBox>
 #include <QToolButton>
 #include <QVBoxLayout>
-
-#include <sys.h>
 
 #include "DesktopServices.h"
 #include "FileSystem.h"
@@ -31,17 +30,17 @@
 
 JavaWizardWidget::JavaWizardWidget(QWidget* parent) : QWidget(parent)
 {
-    m_availableMemory = Sys::getSystemRam() / Sys::mebibyte;
+    m_availableMemory = SysInfo::getSystemRamMiB();
 
-    goodIcon = APPLICATION->getThemedIcon("status-good");
-    yellowIcon = APPLICATION->getThemedIcon("status-yellow");
-    badIcon = APPLICATION->getThemedIcon("status-bad");
+    goodIcon = QIcon::fromTheme("status-good");
+    yellowIcon = QIcon::fromTheme("status-yellow");
+    badIcon = QIcon::fromTheme("status-bad");
     m_memoryTimer = new QTimer(this);
     setupUi();
 
-    connect(m_minMemSpinBox, SIGNAL(valueChanged(int)), this, SLOT(onSpinBoxValueChanged(int)));
-    connect(m_maxMemSpinBox, SIGNAL(valueChanged(int)), this, SLOT(onSpinBoxValueChanged(int)));
-    connect(m_permGenSpinBox, SIGNAL(valueChanged(int)), this, SLOT(onSpinBoxValueChanged(int)));
+    connect(m_minMemSpinBox, &QSpinBox::valueChanged, this, &JavaWizardWidget::onSpinBoxValueChanged);
+    connect(m_maxMemSpinBox, &QSpinBox::valueChanged, this, &JavaWizardWidget::onSpinBoxValueChanged);
+    connect(m_permGenSpinBox, &QSpinBox::valueChanged, this, &JavaWizardWidget::onSpinBoxValueChanged);
     connect(m_memoryTimer, &QTimer::timeout, this, &JavaWizardWidget::memoryValueChanged);
     connect(m_versionWidget, &VersionSelectWidget::selectedVersionChanged, this, &JavaWizardWidget::javaVersionSelected);
     connect(m_javaBrowseBtn, &QPushButton::clicked, this, &JavaWizardWidget::on_javaBrowseBtn_clicked);
@@ -185,7 +184,7 @@ void JavaWizardWidget::setupUi()
 
 void JavaWizardWidget::initialize()
 {
-    m_versionWidget->initialize(APPLICATION->javalist().get());
+    m_versionWidget->initialize(APPLICATION->javalist());
     m_versionWidget->selectSearch();
     m_versionWidget->setResizeOn(2);
     auto s = APPLICATION->settings();
@@ -532,7 +531,7 @@ void JavaWizardWidget::updateThresholds()
 
     {
         auto height = m_labelMaxMemIcon->fontInfo().pixelSize();
-        QIcon icon = APPLICATION->getThemedIcon(iconName);
+        QIcon icon = QIcon::fromTheme(iconName);
         QPixmap pix = icon.pixmap(height, height);
         m_labelMaxMemIcon->setPixmap(pix);
     }

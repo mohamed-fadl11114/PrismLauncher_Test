@@ -13,7 +13,6 @@
 #include "modplatform/EnsureMetadataTask.h"
 #include "modplatform/helpers/OverrideUtils.h"
 
-#include "modplatform/modrinth/ModrinthPackManifest.h"
 #include "net/ChecksumValidator.h"
 
 #include "net/ApiDownload.h"
@@ -33,10 +32,9 @@ bool ModrinthCreationTask::abort()
     if (!canAbort())
         return false;
 
-    m_abort = true;
     if (m_task)
         m_task->abort();
-    return Task::abort();
+    return InstanceCreationTask::abort();
 }
 
 bool ModrinthCreationTask::updateInstance()
@@ -44,7 +42,7 @@ bool ModrinthCreationTask::updateInstance()
     auto instance_list = APPLICATION->instances();
 
     // FIXME: How to handle situations when there's more than one install already for a given modpack?
-    InstancePtr inst;
+    BaseInstance* inst;
     if (auto original_id = originalInstanceID(); !original_id.isEmpty()) {
         inst = instance_list->getInstanceById(original_id);
         Q_ASSERT(inst);
@@ -85,7 +83,7 @@ bool ModrinthCreationTask::updateInstance()
     QString old_index_path(FS::PathCombine(old_index_folder, "modrinth.index.json"));
     QFileInfo old_index_file(old_index_path);
     if (old_index_file.exists()) {
-        std::vector<Modrinth::File> old_files;
+        std::vector<File> old_files;
         parseManifest(old_index_path, old_files, false, false);
 
         // Let's remove all duplicated, identical resources!
@@ -170,7 +168,7 @@ bool ModrinthCreationTask::updateInstance()
 }
 
 // https://docs.modrinth.com/docs/modpacks/format_definition/
-bool ModrinthCreationTask::createInstance()
+std::unique_ptr<MinecraftInstance> ModrinthCreationTask::createInstance()
 {
     QEventLoop loop;
 
@@ -178,7 +176,7 @@ bool ModrinthCreationTask::createInstance()
 
     QString index_path = FS::PathCombine(m_stagingPath, "modrinth.index.json");
     if (m_files.empty() && !parseManifest(index_path, m_files, true, true))
-        return false;
+        return nullptr;
 
     // Keep index file in case we need it some other time (like when changing versions)
     QString new_index_place(FS::PathCombine(parent_folder, "modrinth.index.json"));
@@ -195,7 +193,7 @@ bool ModrinthCreationTask::createInstance()
         // Apply the overrides
         if (!FS::move(override_path, mcPath)) {
             setError(tr("Could not rename the overrides folder:\n") + "overrides");
-            return false;
+            return nullptr;
         }
     }
 
@@ -208,15 +206,15 @@ bool ModrinthCreationTask::createInstance()
         // Apply the overrides
         if (!FS::overrideFolder(mcPath, client_override_path)) {
             setError(tr("Could not rename the client overrides folder:\n") + "client overrides");
-            return false;
+            return nullptr;
         }
     }
 
     QString configPath = FS::PathCombine(m_stagingPath, "instance.cfg");
-    auto instanceSettings = std::make_shared<INISettingsObject>(configPath);
-    MinecraftInstance instance(m_globalSettings, instanceSettings, m_stagingPath);
+    auto instanceSettings = std::make_unique<INISettingsObject>(configPath);
+    auto instance = std::make_unique<MinecraftInstance>(m_globalSettings, std::move(instanceSettings), m_stagingPath);
 
-    auto components = instance.getPackProfile();
+    auto components = instance->getPackProfile();
     components->buildingFromScratch();
     components->setComponentVersion("net.minecraft", m_minecraft_version, true);
 
@@ -230,19 +228,19 @@ bool ModrinthCreationTask::createInstance()
         components->setComponentVersion("net.neoforged", m_neoForge_version);
 
     if (m_instIcon != "default") {
-        instance.setIconKey(m_instIcon);
+        instance->setIconKey(m_instIcon);
     } else if (!m_managed_id.isEmpty()) {
-        instance.setIconKey("modrinth");
+        instance->setIconKey("modrinth");
     }
 
     // Don't add managed info to packs without an ID (most likely imported from ZIP)
     if (!m_managed_id.isEmpty())
-        instance.setManagedPack("modrinth", m_managed_id, m_managed_name, m_managed_version_id, version());
+        instance->setManagedPack("modrinth", m_managed_id, m_managed_name, m_managed_version_id, version());
     else
-        instance.setManagedPack("modrinth", "", name(), "", "");
+        instance->setManagedPack("modrinth", "", name(), "", "");
 
-    instance.setName(name());
-    instance.saveNow();
+    instance->setName(name());
+    instance->saveNow();
 
     auto downloadMods = makeShared<NetJob>(tr("Mod Download Modrinth"), APPLICATION->network());
 
@@ -250,7 +248,7 @@ bool ModrinthCreationTask::createInstance()
     auto root_modpack_url = QUrl::fromLocalFile(root_modpack_path);
     // TODO make this work with other sorts of resource
     QHash<QString, Resource*> resources;
-    for (auto file : m_files) {
+    for (auto& file : m_files) {
         auto fileName = file.path;
         fileName = FS::RemoveInvalidPathChars(fileName);
         auto file_path = FS::PathCombine(root_modpack_path, fileName);
@@ -258,7 +256,7 @@ bool ModrinthCreationTask::createInstance()
             // This means we somehow got out of the root folder, so abort here to prevent exploits
             setError(tr("One of the files has a path that leads to an arbitrary location (%1). This is a security risk and isn't allowed.")
                          .arg(fileName));
-            return false;
+            return nullptr;
         }
         if (fileName.startsWith("mods/")) {
             auto mod = new Mod(file_path);
@@ -269,7 +267,7 @@ bool ModrinthCreationTask::createInstance()
         }
         if (file.downloads.empty()) {
             setError(tr("The file '%1' is missing a download link. This is invalid in the pack format.").arg(fileName));
-            return false;
+            return nullptr;
         }
         qDebug() << "Will try to download" << file.downloads.front() << "to" << file_path;
         auto dl = Net::ApiDownload::makeFile(file.downloads.dequeue(), file_path);
@@ -313,11 +311,11 @@ bool ModrinthCreationTask::createInstance()
         for (auto resource : resources) {
             delete resource;
         }
-        return ended_well;
+        return nullptr;
     }
 
     QEventLoop ensureMetaLoop;
-    QDir folder = FS::PathCombine(instance.modsRoot(), ".index");
+    QDir folder = FS::PathCombine(instance->modsRoot(), ".index");
     auto ensureMetadataTask = makeShared<EnsureMetadataTask>(resources, folder, ModPlatform::ResourceProvider::MODRINTH);
     connect(ensureMetadataTask.get(), &Task::succeeded, this, [&ended_well]() { ended_well = true; });
     connect(ensureMetadataTask.get(), &Task::finished, &ensureMetaLoop, &QEventLoop::quit);
@@ -344,19 +342,22 @@ bool ModrinthCreationTask::createInstance()
         // Only change the name if it didn't use a custom name, so that the previous custom name
         // is preserved, but if we're using the original one, we update the version string.
         // NOTE: This needs to come before the copyManagedPack call!
-        if (inst->name().contains(inst->getManagedPackVersionName()) && inst->name() != instance.name()) {
-            if (askForChangingInstanceName(m_parent, inst->name(), instance.name()) == InstanceNameChange::ShouldChange)
-                inst->setName(instance.name());
+        if (inst->name().contains(inst->getManagedPackVersionName()) && inst->name() != instance->name()) {
+            if (askForChangingInstanceName(m_parent, inst->name(), instance->name()) == InstanceNameChange::ShouldChange)
+                inst->setName(instance->name());
         }
 
-        inst->copyManagedPack(instance);
+        inst->copyManagedPack(*instance);
     }
 
-    return ended_well;
+    if (ended_well) {
+        return instance;
+    }
+    return nullptr;
 }
 
 bool ModrinthCreationTask::parseManifest(const QString& index_path,
-                                         std::vector<Modrinth::File>& files,
+                                         std::vector<File>& files,
                                          bool set_internal_data,
                                          bool show_optional_dialog)
 {
@@ -372,20 +373,20 @@ bool ModrinthCreationTask::parseManifest(const QString& index_path,
 
             if (set_internal_data) {
                 if (m_managed_version_id.isEmpty())
-                    m_managed_version_id = Json::ensureString(obj, "versionId", {}, "Managed ID");
-                m_managed_name = Json::ensureString(obj, "name", {}, "Managed Name");
+                    m_managed_version_id = obj["versionId"].toString();
+                m_managed_name = obj["name"].toString();
             }
 
             auto jsonFiles = Json::requireIsArrayOf<QJsonObject>(obj, "files", "modrinth.index.json");
-            std::vector<Modrinth::File> optionalFiles;
+            std::vector<File> optionalFiles;
             for (const auto& modInfo : jsonFiles) {
-                Modrinth::File file;
+                File file;
                 file.path = Json::requireString(modInfo, "path").replace("\\", "/");
 
-                auto env = Json::ensureObject(modInfo, "env");
+                auto env = modInfo["env"].toObject();
                 // 'env' field is optional
                 if (!env.isEmpty()) {
-                    QString support = Json::ensureString(env, "client", "unsupported");
+                    QString support = env["client"].toString("unsupported");
                     if (support == "unsupported") {
                         continue;
                     } else if (support == "optional") {
@@ -400,7 +401,7 @@ bool ModrinthCreationTask::parseManifest(const QString& index_path,
                 // Do not use requireUrl, which uses StrictMode, instead use QUrl's default TolerantMode
                 // (as Modrinth seems to incorrectly handle spaces)
 
-                auto download_arr = Json::ensureArray(modInfo, "downloads");
+                auto download_arr = modInfo["downloads"].toArray();
                 for (auto download : download_arr) {
                     qWarning() << download.toString();
                     bool is_last = download.toString() == download_arr.last().toString();

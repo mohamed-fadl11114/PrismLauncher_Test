@@ -40,10 +40,12 @@ void XboxAuthorizationStep::perform()
     auto headers = QList<Net::HeaderPair>{
         { "Content-Type", "application/json" },
         { "Accept", "application/json" },
+        { "x-xbl-contract-version", "1" }
     };
     m_response.reset(new QByteArray());
-    m_request = Net::Upload::makeByteArray(url, m_response, xbox_auth_data.toUtf8());
-    m_request->addHeaderProxy(new Net::RawHeaderProxy(headers));
+    m_request = Net::Upload::makeByteArray(url, m_response.get(), xbox_auth_data.toUtf8());
+    m_request->addHeaderProxy(std::make_unique<Net::RawHeaderProxy>(headers));
+    m_request->enableAutoRetry(true);
 
     m_task.reset(new NetJob("XboxAuthorizationStep", APPLICATION->network()));
     m_task->setAskRetry(false);
@@ -52,7 +54,7 @@ void XboxAuthorizationStep::perform()
     connect(m_task.get(), &Task::finished, this, &XboxAuthorizationStep::onRequestDone);
 
     m_task->start();
-    qDebug() << "Getting authorization token for " << m_relyingParty;
+    qDebug() << "Getting authorization token for" << m_relyingParty;
 }
 
 void XboxAuthorizationStep::onRequestDone()
@@ -99,7 +101,7 @@ bool XboxAuthorizationStep::processSTSError()
         QJsonParseError jsonError;
         QJsonDocument doc = QJsonDocument::fromJson(*m_response, &jsonError);
         if (jsonError.error) {
-            qWarning() << "Cannot parse error XSTS response as JSON: " << jsonError.errorString();
+            qWarning() << "Cannot parse error XSTS response as JSON:" << jsonError.errorString();
             emit finished(AccountTaskState::STATE_FAILED_SOFT,
                           tr("Cannot parse %1 authorization error response as JSON: %2").arg(m_authorizationKind, jsonError.errorString()));
             return true;
@@ -115,13 +117,13 @@ bool XboxAuthorizationStep::processSTSError()
         switch (errorCode) {
             case 2148916233: {
                 emit finished(AccountTaskState::STATE_FAILED_SOFT,
-                              tr("This Microsoft account does not have an XBox Live profile. Buy the game on %1 first.")
+                              tr("This Microsoft account does not have an Xbox Live profile. Buy the game on %1 first.")
                                   .arg("<a href=\"https://www.minecraft.net/en-us/store/minecraft-java-edition\">minecraft.net</a>"));
                 return true;
             }
             case 2148916235: {
                 // NOTE: this is the Grulovia error
-                emit finished(AccountTaskState::STATE_FAILED_SOFT, tr("XBox Live is not available in your country. You've been blocked."));
+                emit finished(AccountTaskState::STATE_FAILED_SOFT, tr("Xbox Live is not available in your country. You've been blocked."));
                 return true;
             }
             case 2148916238: {

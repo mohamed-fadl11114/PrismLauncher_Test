@@ -45,9 +45,9 @@ void SkinList::startWatching()
     update();
     m_isWatching = m_watcher->addPath(m_dir.absolutePath());
     if (m_isWatching) {
-        qDebug() << "Started watching " << m_dir.absolutePath();
+        qDebug() << "Started watching" << m_dir.absolutePath();
     } else {
-        qDebug() << "Failed to start watching " << m_dir.absolutePath();
+        qDebug() << "Failed to start watching" << m_dir.absolutePath();
     }
 }
 
@@ -59,9 +59,9 @@ void SkinList::stopWatching()
     }
     m_isWatching = !m_watcher->removePath(m_dir.absolutePath());
     if (!m_isWatching) {
-        qDebug() << "Stopped watching " << m_dir.absolutePath();
+        qDebug() << "Stopped watching" << m_dir.absolutePath();
     } else {
-        qDebug() << "Failed to stop watching " << m_dir.absolutePath();
+        qDebug() << "Failed to stop watching" << m_dir.absolutePath();
     }
 }
 
@@ -75,9 +75,9 @@ bool SkinList::update()
         try {
             auto doc = Json::requireDocument(manifestInfo.absoluteFilePath(), "SkinList JSON file");
             const auto root = doc.object();
-            auto skins = Json::ensureArray(root, "skins");
+            auto skins = root["skins"].toArray();
             for (auto jSkin : skins) {
-                SkinModel s(m_dir, Json::ensureObject(jSkin));
+                SkinModel s(m_dir, jSkin.toObject());
                 if (s.isValid()) {
                     newSkins << s;
                 }
@@ -167,7 +167,7 @@ void SkinList::directoryChanged(const QString& path)
 
 void SkinList::fileChanged(const QString& path)
 {
-    qDebug() << "Checking " << path;
+    qDebug() << "Checking" << path;
     QFileInfo checkfile(path);
     if (!checkfile.exists())
         return;
@@ -268,6 +268,26 @@ void SkinList::installSkins(const QStringList& iconFiles)
         installSkin(file);
 }
 
+QString getUniqueFile(const QString& root, const QString& file)
+{
+    auto result = FS::PathCombine(root, file);
+    if (!QFileInfo::exists(result)) {
+        return result;
+    }
+
+    QString baseName = QFileInfo(file).completeBaseName();
+    QString extension = QFileInfo(file).suffix();
+    int tries = 0;
+    while (QFileInfo::exists(result)) {
+        if (++tries > 256)
+            return {};
+
+        QString key = QString("%1%2.%3").arg(baseName).arg(tries).arg(extension);
+        result = FS::PathCombine(root, key);
+    }
+
+    return result;
+}
 QString SkinList::installSkin(const QString& file, const QString& name)
 {
     if (file.isEmpty())
@@ -282,7 +302,7 @@ QString SkinList::installSkin(const QString& file, const QString& name)
     if (fileinfo.suffix() != "png" && !SkinModel(fileinfo.absoluteFilePath()).isValid())
         return tr("Skin images must be 64x64 or 64x32 pixel PNG files.");
 
-    QString target = FS::PathCombine(m_dir.absolutePath(), name.isEmpty() ? fileinfo.fileName() : name);
+    QString target = getUniqueFile(m_dir.absolutePath(), name.isEmpty() ? fileinfo.fileName() : name);
 
     return QFile::copy(file, target) ? "" : tr("Unable to copy file");
 }
@@ -371,7 +391,8 @@ bool SkinList::setData(const QModelIndex& idx, const QVariant& value, int role)
     auto& skin = m_skinList[row];
     auto newName = value.toString();
     if (skin.name() != newName) {
-        skin.rename(newName);
+        if (!skin.rename(newName))
+            return false;
         save();
     }
     return true;

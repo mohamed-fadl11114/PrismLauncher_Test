@@ -61,6 +61,7 @@
 #include "ui/pages/modplatform/ImportPage.h"
 #include "ui/pages/modplatform/atlauncher/AtlPage.h"
 #include "ui/pages/modplatform/flame/FlamePage.h"
+#include "ui/pages/modplatform/ftb/FtbPage.h"
 #include "ui/pages/modplatform/legacy_ftb/Page.h"
 #include "ui/pages/modplatform/modrinth/ModrinthPage.h"
 #include "ui/pages/modplatform/technic/TechnicPage.h"
@@ -74,7 +75,7 @@ NewInstanceDialog::NewInstanceDialog(const QString& initialGroup,
 {
     ui->setupUi(this);
 
-    setWindowIcon(APPLICATION->getThemedIcon("new"));
+    setWindowIcon(QIcon::fromTheme("new"));
 
     InstIconKey = "default";
     ui->iconButton->setIcon(APPLICATION->icons()->getIcon(InstIconKey));
@@ -95,6 +96,7 @@ NewInstanceDialog::NewInstanceDialog(const QString& initialGroup,
     m_buttons = new QDialogButtonBox(QDialogButtonBox::Help | QDialogButtonBox::Ok | QDialogButtonBox::Cancel);
 
     m_container = new PageContainer(this, {}, this);
+    m_container->useSidebarStyle(false);
     m_container->setSizePolicy(QSizePolicy::Policy::Preferred, QSizePolicy::Policy::Expanding);
     m_container->layout()->setContentsMargins(0, 0, 0, 0);
     ui->verticalLayout->insertWidget(2, m_container);
@@ -134,7 +136,7 @@ NewInstanceDialog::NewInstanceDialog(const QString& initialGroup,
     updateDialogState();
 
     if (APPLICATION->settings()->get("NewInstanceGeometry").isValid()) {
-        restoreGeometry(QByteArray::fromBase64(APPLICATION->settings()->get("NewInstanceGeometry").toByteArray()));
+        restoreGeometry(QByteArray::fromBase64(APPLICATION->settings()->get("NewInstanceGeometry").toString().toUtf8()));
     } else {
         auto screen = parent->screen();
         auto geometry = screen->availableSize();
@@ -146,7 +148,7 @@ NewInstanceDialog::NewInstanceDialog(const QString& initialGroup,
 
 void NewInstanceDialog::reject()
 {
-    APPLICATION->settings()->set("NewInstanceGeometry", saveGeometry().toBase64());
+    APPLICATION->settings()->set("NewInstanceGeometry", QString::fromUtf8(saveGeometry().toBase64()));
 
     // This is just so that the pages get the close() call and can react to it, if needed.
     m_container->prepareToClose();
@@ -156,7 +158,7 @@ void NewInstanceDialog::reject()
 
 void NewInstanceDialog::accept()
 {
-    APPLICATION->settings()->set("NewInstanceGeometry", saveGeometry().toBase64());
+    APPLICATION->settings()->set("NewInstanceGeometry", QString::fromUtf8(saveGeometry().toBase64()));
     importIconNow();
 
     // This is just so that the pages get the close() call and can react to it, if needed.
@@ -176,6 +178,7 @@ QList<BasePage*> NewInstanceDialog::getPages()
     pages.append(new AtlPage(this));
     if (APPLICATION->capabilities() & Application::SupportsFlame)
         pages.append(new FlamePage(this));
+    pages.append(new FtbPage(this));
     pages.append(new LegacyFTB::Page(this));
     pages.append(new FTBImportAPP::ImportFTBPage(this));
     pages.append(new ModrinthPage(this));
@@ -316,7 +319,7 @@ void NewInstanceDialog::importIconNow()
         InstIconKey = importIconName.mid(0, importIconName.lastIndexOf('.'));
         importIcon = false;
     }
-    APPLICATION->settings()->set("NewInstanceGeometry", saveGeometry().toBase64());
+    APPLICATION->settings()->set("NewInstanceGeometry", QString::fromUtf8(saveGeometry().toBase64()));
 }
 
 void NewInstanceDialog::selectedPageChanged(BasePage* previous, BasePage* selected)
